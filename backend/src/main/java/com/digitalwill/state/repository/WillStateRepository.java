@@ -2,7 +2,11 @@ package com.digitalwill.state.repository;
 
 import com.digitalwill.state.model.WillState;
 import com.digitalwill.state.model.WillStateEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -20,4 +24,9 @@ public interface WillStateRepository extends JpaRepository<WillStateEntity, UUID
     Optional<WillStateEntity> findByIdAndOwnerId(UUID id, UUID ownerId);
 
     List<WillStateEntity> findByStateAndReleaseAfterLessThanEqual(WillState state, Instant cutoff);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT w FROM WillStateEntity w WHERE w.id = :id")
+    Optional<WillStateEntity> findByIdForUpdate(@Param("id") UUID id);
 }
+

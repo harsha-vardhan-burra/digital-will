@@ -76,8 +76,14 @@ stateDiagram-v2
 
 4. **`VERIFICATION_PENDING` &rarr; `VERIFIED`**
    - **Event:** `CONFIRMATIONS_SATISFIED`
-   - **Prerequisites / Guards:** Distinct trusted-contact confirmations &ge; required count (MVP standard: 2 of 3 contacts).
-   - **Side Effect:** Sets `verified_at = now`, transitions state to `VERIFIED`.
+   - **Prerequisites / Guards:**
+     - Distinct trusted-contact confirmations &ge; required quorum (MVP standard: 2 of 3 distinct contacts) evaluated for the active `verification_cycle`.
+     - Confirmed via cryptographically random, single-use, expiry-aware tokens hashed at rest (`SHA-256`).
+     - Database-enforced uniqueness: `UNIQUE (will_id, contact_id, verification_cycle)` ensures no contact can count twice.
+   - **Concurrency Guard:**
+     - Row-level pessimistic locking on the `wills` entity serializes concurrent distinct confirmations to prevent phantom-read count races.
+     - State Engine atomic conditional SQL (`UPDATE wills SET state = 'VERIFIED' ... WHERE id = :id AND state = 'VERIFICATION_PENDING'`) ensures exactly one transition occurs.
+   - **Side Effect:** Sets `verified_at = now`, transitions state to `VERIFIED`. Subsequent confirmations in the same cycle are recorded without triggering secondary transitions.
 
 5. **`VERIFIED` &rarr; `RELEASE_PENDING`**
    - **Event:** `RELEASE_SCHEDULED`
