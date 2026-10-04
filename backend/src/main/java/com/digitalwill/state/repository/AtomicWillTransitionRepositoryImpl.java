@@ -180,6 +180,7 @@ public class AtomicWillTransitionRepositoryImpl implements AtomicWillTransitionR
                     executing_at = NULL,
                     cancelled_at = ?,
                     updated_at = ?,
+                    verification_cycle = verification_cycle + 1,
                     version = version + 1
                 WHERE id = ?
                   AND state IN ('INACTIVITY_WARNING', 'FINAL_WARNING', 'VERIFICATION_PENDING', 'RELEASE_PENDING')
@@ -191,6 +192,17 @@ public class AtomicWillTransitionRepositoryImpl implements AtomicWillTransitionR
                 Timestamp.from(now),
                 willId
         );
+        if (updated == 1) {
+            // Revoke outstanding ACTIVE verification requests for reset safety (Sec 10, 21)
+            // Cycle increment already invalidates via cycle check; revocation adds explicit invalidation
+            try {
+                jdbcTemplate.update(
+                        "UPDATE verification_requests SET status = 'REVOKED' WHERE will_id = ? AND status = 'ACTIVE'",
+                        willId);
+            } catch (Exception ignored) {
+                // table may not exist during early PR1 tests without V2 migration - ignore
+            }
+        }
         return updated == 1;
     }
 

@@ -66,6 +66,9 @@ public class WillStateEntity {
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
+    @Column(name = "verification_cycle", nullable = false)
+    private Long verificationCycle = 0L;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -81,6 +84,7 @@ public class WillStateEntity {
         this.createdAt = Objects.requireNonNull(now, "createdAt must not be null");
         this.updatedAt = now;
         this.lastVerifiedActivityAt = Objects.requireNonNull(lastVerifiedActivityAt, "lastVerifiedActivityAt must not be null");
+        this.verificationCycle = 0L;
     }
 
     // Getters and setters
@@ -202,6 +206,14 @@ public class WillStateEntity {
 
     public void setCancelledAt(Instant cancelledAt) {
         this.cancelledAt = cancelledAt;
+    }
+
+    public Long getVerificationCycle() {
+        return verificationCycle;
+    }
+
+    public void setVerificationCycle(Long verificationCycle) {
+        this.verificationCycle = verificationCycle;
     }
 
     public Long getVersion() {
