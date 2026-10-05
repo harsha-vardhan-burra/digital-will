@@ -35,15 +35,32 @@ public class WillStateService {
     private final AtomicWillTransitionRepository atomicTransitionRepository;
     private final TransitionRegistry transitionRegistry;
     private final TimeProvider timeProvider;
+    private final jakarta.persistence.EntityManager entityManager;
 
     public WillStateService(WillStateRepository willStateRepository,
                             AtomicWillTransitionRepository atomicTransitionRepository,
                             TransitionRegistry transitionRegistry,
                             TimeProvider timeProvider) {
+        this(willStateRepository, atomicTransitionRepository, transitionRegistry, timeProvider, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public WillStateService(WillStateRepository willStateRepository,
+                            AtomicWillTransitionRepository atomicTransitionRepository,
+                            TransitionRegistry transitionRegistry,
+                            TimeProvider timeProvider,
+                            @org.springframework.beans.factory.annotation.Autowired(required = false) jakarta.persistence.EntityManager entityManager) {
         this.willStateRepository = Objects.requireNonNull(willStateRepository, "willStateRepository must not be null");
         this.atomicTransitionRepository = Objects.requireNonNull(atomicTransitionRepository, "atomicTransitionRepository must not be null");
         this.transitionRegistry = Objects.requireNonNull(transitionRegistry, "transitionRegistry must not be null");
         this.timeProvider = Objects.requireNonNull(timeProvider, "timeProvider must not be null");
+        this.entityManager = entityManager;
+    }
+
+    private void clearCache() {
+        if (entityManager != null) {
+            entityManager.clear();
+        }
     }
 
     /**
@@ -62,6 +79,7 @@ public class WillStateService {
     }
 
     public WillStateEntity getWillOrThrow(UUID willId) {
+        clearCache();
         return willStateRepository.findById(willId)
                 .orElseThrow(() -> new IllegalArgumentException("Digital Will not found with ID: " + willId));
     }
@@ -83,6 +101,7 @@ public class WillStateService {
 
         boolean claimed = atomicTransitionRepository.claimInactivityWarning(willId, now);
         if (claimed) {
+            clearCache();
             log.info("Digital Will [{}] claimed INACTIVITY_WARNING transition at {}", willId, now);
         }
         return claimed;
@@ -106,6 +125,7 @@ public class WillStateService {
 
         boolean claimed = atomicTransitionRepository.claimFinalWarning(willId, now);
         if (claimed) {
+            clearCache();
             log.info("Digital Will [{}] claimed FINAL_WARNING transition at {}", willId, now);
         }
         return claimed;
@@ -129,6 +149,7 @@ public class WillStateService {
 
         boolean claimed = atomicTransitionRepository.claimVerificationPending(willId, now);
         if (claimed) {
+            clearCache();
             log.info("Digital Will [{}] claimed VERIFICATION_PENDING transition at {}", willId, now);
         }
         return claimed;
@@ -151,6 +172,7 @@ public class WillStateService {
 
         boolean claimed = atomicTransitionRepository.claimVerified(willId, now);
         if (claimed) {
+            clearCache();
             log.info("Digital Will [{}] claimed VERIFIED transition at {} with {}/{} confirmations",
                     willId, now, distinctConfirmations, requiredConfirmations);
         }
@@ -173,6 +195,7 @@ public class WillStateService {
 
         boolean scheduled = atomicTransitionRepository.scheduleRelease(willId, releaseAfter, now);
         if (scheduled) {
+            clearCache();
             log.info("Digital Will [{}] scheduled RELEASE_PENDING at {} with releaseAfter={}", willId, now, releaseAfter);
         }
         return scheduled;
@@ -197,6 +220,7 @@ public class WillStateService {
 
         boolean claimed = atomicTransitionRepository.claimExecuting(willId, now, now);
         if (claimed) {
+            clearCache();
             log.info("Worker successfully claimed EXECUTING for Will [{}] at {}", willId, now);
         } else {
             log.warn("Worker failed to claim EXECUTING for Will [{}] (0 rows updated, likely raced or ineligible)", willId);
@@ -221,6 +245,7 @@ public class WillStateService {
 
         boolean completed = atomicTransitionRepository.completeExecution(willId, now, now);
         if (completed) {
+            clearCache();
             log.info("Digital Will [{}] reached terminal state EXECUTED at {}", willId, now);
         }
         return completed;
@@ -242,6 +267,7 @@ public class WillStateService {
             will.setLastVerifiedActivityAt(activityTimestamp);
             will.setUpdatedAt(now);
             willStateRepository.save(will);
+            clearCache();
             log.info("Updated lastVerifiedActivityAt for ACTIVE Will [{}]", willId);
             return true;
         }
@@ -249,6 +275,7 @@ public class WillStateService {
         if (will.getState().canResetToActive()) {
             boolean reset = atomicTransitionRepository.resetToActive(willId, activityTimestamp, now, null);
             if (reset) {
+                clearCache();
                 log.info("Reset Will [{}] from {} to ACTIVE due to verified owner activity", willId, will.getState());
             }
             return reset;
@@ -272,6 +299,7 @@ public class WillStateService {
 
         boolean reset = atomicTransitionRepository.resetToActive(willId, now, now, now);
         if (reset) {
+            clearCache();
             log.info("Owner cancelled pending succession for Will [{}], reset to ACTIVE", willId);
         }
         return reset;
@@ -296,6 +324,7 @@ public class WillStateService {
         Instant cutoff = now.minus(recoveryTimeout);
         boolean recovered = atomicTransitionRepository.recoverStaleExecuting(willId, cutoff, now);
         if (recovered) {
+            clearCache();
             log.info("Recovered stalled EXECUTING Will [{}] back to RELEASE_PENDING at {}", willId, now);
         }
         return recovered;

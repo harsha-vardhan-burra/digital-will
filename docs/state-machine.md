@@ -126,12 +126,39 @@ stateDiagram-v2
 9. **Crash Recovery (`EXECUTING` &rarr; `RELEASE_PENDING`)**
    - **Event:** `EXECUTION_RECOVERY_TRIGGERED`
    - **Prerequisites / Guards:** `executing_at + execution_recovery_timeout <= now` and disclosure not completed.
-   - **Side Effect:** Reverts state to `RELEASE_PENDING` with `executing_at = NULL` to permit safe retry.
+   - **Mechanism:** Driven by `ReleaseProcessingJobService` calling `ReleaseExecutionService.recoverStalledExecutions()`.
+   - **Side Effect:** Reverts state to `RELEASE_PENDING` with `executing_at = NULL` and marks stalled execution items as `RECOVERED` or `FAILED` to permit safe retry.
 
 ---
 
-## 4. Verification and Concurrency Proofs
+## 4. Phase 2 Release Execution & Controlled Disclosure Lifecycle
 
-The atomicity invariant has been verified via multi-threaded automated test suites (`WillStateConcurrencyTest`):
+When a will reaches `RELEASE_PENDING` and safety delay elapses (`release_after <= now`):
+1. **Worker Claim Lease:**
+   - Worker attempts atomic conditional claim `claimExecution(willId)` (`RELEASE_PENDING` &rarr; `EXECUTING`).
+   - Creates or attaches to `release_executions` record with status `IN_PROGRESS`.
+2. **Item Execution Loop:**
+   - Evaluates all active beneficiaries with allocations.
+   - For each beneficiary:
+     - Generates snapshot of entitled assets and document metadata (`disclosed_records`).
+     - Generates a cryptographically secure 256-bit entropy raw action token.
+     - Hashes raw token (`SHA-256`) and persists into `disclosure_tokens` with TTL (e.g. 7 days).
+     - Records individual item in `release_execution_items` with status `SUCCESS`.
+3. **Completion & Terminal State:**
+   - Marks `release_executions` row as `COMPLETED`.
+   - Transitions `wills` state via `completeExecution(willId)` (`EXECUTING` &rarr; `EXECUTED`).
+   - Writes tamper-evident hash-chained audit log entry with action `STATE_TRANSITION`.
+4. **Beneficiary Access:**
+   - Beneficiary visits `/disclosure/{rawToken}`.
+   - Backend validates token hash, checks expiration and status (`ACTIVE`).
+   - Serves scoped asset breakdown and permits authorized document download.
+
+---
+
+## 5. Verification and Concurrency Proofs
+
+The atomicity invariant has been verified via multi-threaded automated test suites (`WillStateConcurrencyTest`, `ReleaseExecutionConcurrencyTest`, `JobConcurrencyTest`):
 - **Concurrent Worker Claim Atomicity:** When 10 concurrent threads simultaneously race to claim `EXECUTING` on an eligible `RELEASE_PENDING` Will, exactly 1 worker claims the transition (1 row updated) and 9 workers fail (0 rows updated).
 - **Claim vs. Owner Reset Race:** When a worker attempts to claim execution concurrently with an owner logging in / resetting to `ACTIVE`, the database guarantees mutual exclusion: exactly one operation succeeds, preventing partial disclosure or corrupted states.
+- **Concurrent Release Item Idempotency:** If a worker crashes mid-release or recovers, individual beneficiary disclosure tokens and records are protected by database unique constraints (`UNIQUE (will_id, beneficiary_id)`), ensuring no duplicate records or tokens are generated.
+- **Concurrent Job Triggers:** When GitHub Actions or external schedulers fire duplicate requests to `/internal/jobs/process-inactivity` or `/internal/jobs/process-release`, batch concurrency and conditional updates ensure zero duplicate transitions and zero data corruption.

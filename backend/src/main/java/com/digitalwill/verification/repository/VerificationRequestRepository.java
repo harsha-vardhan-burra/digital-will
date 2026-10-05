@@ -17,6 +17,8 @@ public interface VerificationRequestRepository extends JpaRepository<Verificatio
 
     Optional<VerificationRequest> findByTokenHash(String tokenHash);
 
+    List<VerificationRequest> findByWillId(UUID willId);
+
     List<VerificationRequest> findByWillIdAndStatus(UUID willId, VerificationRequestStatus status);
 
     List<VerificationRequest> findByWillIdAndVerificationCycle(UUID willId, Long verificationCycle);

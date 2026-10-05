@@ -28,5 +28,20 @@ public interface WillStateRepository extends JpaRepository<WillStateEntity, UUID
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT w FROM WillStateEntity w WHERE w.id = :id")
     Optional<WillStateEntity> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.ACTIVE AND w.lastVerifiedActivityAt <= :cutoff ORDER BY w.lastVerifiedActivityAt ASC")
+    List<WillStateEntity> findEligibleForInactivityWarning(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.INACTIVITY_WARNING AND w.warningSentAt IS NOT NULL AND w.warningSentAt <= :cutoff ORDER BY w.warningSentAt ASC")
+    List<WillStateEntity> findEligibleForFinalWarning(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.FINAL_WARNING AND w.finalWarningSentAt IS NOT NULL AND w.finalWarningSentAt <= :cutoff ORDER BY w.finalWarningSentAt ASC")
+    List<WillStateEntity> findEligibleForVerification(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.RELEASE_PENDING AND w.releaseAfter <= :now AND w.cancelledAt IS NULL ORDER BY w.releaseAfter ASC")
+    List<WillStateEntity> findEligibleForExecution(@Param("now") Instant now, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.EXECUTING AND w.executingAt IS NOT NULL AND w.executingAt <= :cutoff ORDER BY w.executingAt ASC")
+    List<WillStateEntity> findStalledExecutions(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
 }
 
