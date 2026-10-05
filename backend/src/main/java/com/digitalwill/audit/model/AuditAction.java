@@ -1,0 +1,22 @@
+package com.digitalwill.audit.model;
+
+/**
+ * Domain actions tracked within the tamper-evident audit log.
+ */
+public enum AuditAction {
+    WILL_CREATED,
+    STATE_TRANSITION,
+    OWNER_ACTIVITY,
+    CONTACT_CONFIRMATION,
+    VERIFICATION_RESET,
+    DOCUMENT_UPLOADED,
+    DOCUMENT_ENCRYPTED,
+    DOCUMENT_DECRYPTED,
+    DOCUMENT_ACCESSED,
+    RELEASE_CLAIMED,
+    RELEASE_EXECUTED,
+    DISCLOSURE_GENERATED,
+    DISCLOSURE_ACCESSED,
+    EXECUTION_RECOVERY,
+    SECURITY_ALERT
+}
