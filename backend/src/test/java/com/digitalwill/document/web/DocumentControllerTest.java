@@ -1,5 +1,6 @@
 package com.digitalwill.document.web;
 
+import com.digitalwill.auth.service.AuthService;
 import com.digitalwill.common.TestTimeProvider;
 import com.digitalwill.config.TestTimeConfig;
 import com.digitalwill.state.model.WillStateEntity;
@@ -33,15 +34,21 @@ class DocumentControllerTest {
     @Autowired MockMvc mockMvc;
     @Autowired WillStateService willStateService;
     @Autowired TestTimeProvider timeProvider;
+    @Autowired AuthService authService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private UUID willId;
     private UUID ownerId;
+    private String authToken;
 
     @BeforeEach
     void setUp() {
         timeProvider.setNow(Instant.parse("2026-08-01T12:00:00Z"));
-        ownerId = UUID.randomUUID();
+        String email = "docowner_" + UUID.randomUUID() + "@example.com";
+        AuthService.AuthResponse reg = authService.register(email, "Password123!", "Document Owner");
+        ownerId = reg.userId();
+        authToken = reg.token();
+
         WillStateEntity will = willStateService.createWill(ownerId, "Doc Test Will");
         willId = will.getId();
     }
@@ -59,7 +66,7 @@ class DocumentControllerTest {
         String uploadRes = mockMvc.perform(multipart("/api/documents/upload")
                         .file(file)
                         .param("willId", willId.toString())
-                        .param("ownerId", ownerId.toString()))
+                        .header("Authorization", "Bearer " + authToken))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.fileName").value("annexure.txt"))
                 .andExpect(jsonPath("$.fileSize").value(fileBytes.length))
@@ -70,7 +77,8 @@ class DocumentControllerTest {
 
         // Download
         byte[] downloaded = mockMvc.perform(get("/api/documents/" + docId + "/download")
-                        .param("willId", willId.toString()))
+                        .param("willId", willId.toString())
+                        .header("Authorization", "Bearer " + authToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
 
@@ -80,7 +88,8 @@ class DocumentControllerTest {
     @Test
     void download_documentNotFound_returns404() throws Exception {
         mockMvc.perform(get("/api/documents/" + UUID.randomUUID() + "/download")
-                        .param("willId", willId.toString()))
+                        .param("willId", willId.toString())
+                        .header("Authorization", "Bearer " + authToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("DOCUMENT_NOT_FOUND"));
     }

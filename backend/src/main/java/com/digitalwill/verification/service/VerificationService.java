@@ -68,11 +68,76 @@ public class VerificationService {
 
     // ---- Trusted Contact management ----
 
+    public record WillContactDetailed(
+            UUID associationId,
+            UUID contactId,
+            UUID willId,
+            String name,
+            String email,
+            boolean isActive,
+            Instant addedAt,
+            boolean confirmedCurrentCycle
+    ) {}
+
+    @Transactional
+    public WillContactDetailed addTrustedContactToWill(UUID willId, String name, String email) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Contact name must not be blank");
+        }
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Contact email must not be blank");
+        }
+        String cleanEmail = email.trim().toLowerCase();
+        TrustedContact contact = trustedContactRepository.findByEmail(cleanEmail)
+                .orElseGet(() -> createTrustedContact(name.trim(), cleanEmail));
+
+        WillContact wc = willContactRepository.findByWillIdAndContactId(willId, contact.getId())
+                .orElseGet(() -> {
+                    WillContact newWc = new WillContact(UUID.randomUUID(), willId, contact.getId(), timeProvider.now());
+                    return willContactRepository.saveAndFlush(newWc);
+                });
+
+        if (!wc.isActive()) {
+            wc.setActive(true);
+            wc = willContactRepository.saveAndFlush(wc);
+        }
+
+        return new WillContactDetailed(wc.getId(), contact.getId(), willId, contact.getName(), contact.getEmail(), wc.isActive(), wc.getCreatedAt(), false);
+    }
+
+    @Transactional
+    public void deactivateContactForWill(UUID willId, UUID contactId) {
+        WillStateEntity will = willStateRepository.findById(willId)
+                .orElseThrow(() -> new IllegalArgumentException("Will not found: " + willId));
+        if (will.getState() != WillState.ACTIVE) {
+            throw new IllegalStateException("Contacts can only be deactivated when Will is in ACTIVE state");
+        }
+        WillContact wc = willContactRepository.findByWillIdAndContactId(willId, contactId)
+                .orElseThrow(() -> new IllegalArgumentException("Contact association not found"));
+        wc.setActive(false);
+        willContactRepository.saveAndFlush(wc);
+    }
+
+    public List<WillContactDetailed> listContactsForWillDetailed(UUID willId) {
+        WillStateEntity will = willStateRepository.findById(willId)
+                .orElseThrow(() -> new IllegalArgumentException("Will not found: " + willId));
+        Long cycle = will.getVerificationCycle() != null ? will.getVerificationCycle() : 0L;
+
+        List<WillContact> willContacts = willContactRepository.findByWillId(willId);
+        return willContacts.stream().map(wc -> {
+            TrustedContact tc = trustedContactRepository.findById(wc.getContactId()).orElse(null);
+            String name = tc != null ? tc.getName() : "Unknown";
+            String email = tc != null ? tc.getEmail() : "";
+            boolean confirmed = confirmationRepository.existsByWillIdAndContactIdAndVerificationCycle(willId, wc.getContactId(), cycle);
+            return new WillContactDetailed(wc.getId(), wc.getContactId(), willId, name, email, wc.isActive(), wc.getCreatedAt(), confirmed);
+        }).toList();
+    }
+
     @Transactional
     public TrustedContact createTrustedContact(String name, String email) {
         Instant now = timeProvider.now();
         TrustedContact contact = new TrustedContact(UUID.randomUUID(), name, email, now);
-        return trustedContactRepository.save(contact);
+        return trustedContactRepository.saveAndFlush(contact);
     }
 
     @Transactional
@@ -85,7 +150,7 @@ public class VerificationService {
             return willContactRepository.findByWillIdAndContactId(willId, contactId).orElseThrow();
         }
         WillContact wc = new WillContact(UUID.randomUUID(), willId, contactId, timeProvider.now());
-        return willContactRepository.save(wc);
+        return willContactRepository.saveAndFlush(wc);
     }
 
     public List<WillContact> listContactsForWill(UUID willId) {
