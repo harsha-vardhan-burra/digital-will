@@ -68,20 +68,93 @@ ACTIVE -> INACTIVITY_WARNING -> FINAL_WARNING -> VERIFICATION_PENDING -> VERIFIE
 - Scheduled processing endpoints (`/internal/jobs/**`) are triggered externally (e.g. GitHub Actions).
 - Endpoints are protected by a shared secret (`X-Internal-Job-Secret`) verified using constant-time comparison to prevent timing attacks.
 
+
 ---
 
-## 4. Getting Started
+## 4. Phase 3 Core Capabilities & Workflows
+
+### 4.1 Authentication & Server-Side Ownership Boundary
+- **User Registration & Login:** Email/password authentication using BCrypt (`strength = 12`) password hashing.
+- **Bearer Token Management:** Session tokens hashed via SHA-256 in PostgreSQL (`user_auth_tokens`).
+- **Principal Derivation:** All will and estate operations derive ownership strictly from the authenticated `UserPrincipal`. Client-supplied user IDs are never trusted.
+- **Single Will per User Model:** Enforced at both the database schema (`uq_wills_owner_user_id`) and service layer, accessible via `GET /api/wills/my`.
+- **Authorization Before Decryption:** Document access requires authenticated ownership verification before any decryption operation is initiated.
+
+### 4.2 Comprehensive Estate & Allocation Management
+- **Structured Asset Categories:** Real Estate, Bank Accounts, Investment Portfolios, and Digital Accounts.
+- **Independent Beneficiary Registry:** Beneficiaries are stored independently of assets to permit fine-grained allocation.
+- **Strict Allocation Enforcement:** Allocations are verified to belong to the owner's will, reference valid assets, and enforce a 100% maximum distribution rule per asset.
+- **Review & Readiness Checklist:** `GET /api/wills/{id}/review` evaluates readiness against 6 key operational criteria before succession enablement.
+
+### 4.3 Five Verified Integration Workflows (100% Test Coverage)
+The system is backed by a 128-test suite, including 5 end-to-end integration workflows:
+1. **Workflow 1: End-to-End Estate Setup & Review (`EstateWorkflowIntegrationTest`)**
+   - User registration -> will creation -> asset and beneficiary configuration -> 100% allocation -> 3 trusted contacts -> document vault upload -> review checklist verification -> activity check-in -> audit log integrity check.
+2. **Workflow 2: Ownership Boundaries & Single Will Isolation (`WillOwnershipIntegrationTest`)**
+   - Verifies User B receives `403 Forbidden` attempting to access User A's will, assets, beneficiaries, contacts, documents, or check-ins. Verifies single-will conflict returns `409 Conflict`.
+3. **Workflow 3: Succession Progression & Inactivity Lifecycle (`SuccessionIntegrationTest`)**
+   - Authoritative progression through `ACTIVE` -> `INACTIVITY_WARNING` -> `FINAL_WARNING` -> `VERIFICATION_PENDING` -> 2-of-3 Contact Quorum -> `VERIFIED` -> `RELEASE_PENDING` -> `EXECUTING` -> `EXECUTED`, with complete audit hash-chain continuity.
+4. **Workflow 4: Release Failure Recovery & Idempotent Resumption (`ReleaseFailureRecoveryIntegrationTest`)**
+   - Simulates a mid-release worker crash after 1 of 2 beneficiaries is processed. Verifies expired lease recovery, idempotency, skipping already executed items, and zero duplicate disclosure entries.
+5. **Workflow 5: Scoped Disclosure Isolation & Fail-Closed Boundaries (`DisclosureWorkflowIntegrationTest`)**
+   - Verifies strict beneficiary payload isolation (Beneficiary A cannot see Beneficiary B's assets), envelope-decrypted document downloads, cross-beneficiary document download rejection (`403 Forbidden`), expired token rejection (`410 Gone`), and single-use token consumption (`409 Conflict`).
+
+---
+
+## 5. API Endpoints
+
+| Category | Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- | :--- |
+| **Auth** | `POST` | `/api/auth/register` | Register user account | Public |
+| **Auth** | `POST` | `/api/auth/login` | Authenticate and obtain Bearer token | Public |
+| **Auth** | `GET` | `/api/auth/me` | Retrieve authenticated user profile | Bearer Token |
+| **Auth** | `POST` | `/api/auth/logout` | Revoke current Bearer token | Bearer Token |
+| **Wills** | `POST` | `/api/wills` | Create a new Digital Will (1 per user) | Bearer Token |
+| **Wills** | `GET` | `/api/wills/my` | Get current user's Digital Will | Bearer Token |
+| **Wills** | `GET` | `/api/wills/{id}` | Get will details (owner only) | Bearer Token |
+| **Wills** | `GET` | `/api/wills/{id}/review` | Comprehensive readiness checklist | Bearer Token |
+| **Wills** | `GET` | `/api/wills/{id}/audit` | Sanitized audit log trail | Bearer Token |
+| **Wills** | `POST` | `/api/wills/{id}/check-in` | Record owner activity check-in | Bearer Token |
+| **Estate** | `POST` | `/api/wills/{id}/assets` | Add asset to will | Bearer Token |
+| **Estate** | `DELETE` | `/api/wills/{id}/assets/{assetId}` | Remove asset and allocations | Bearer Token |
+| **Estate** | `POST` | `/api/wills/{id}/beneficiaries` | Add beneficiary to will | Bearer Token |
+| **Estate** | `DELETE` | `/api/wills/{id}/beneficiaries/{benId}`| Remove beneficiary & allocations | Bearer Token |
+| **Estate** | `POST` | `/api/wills/{id}/allocations` | Define asset distribution share | Bearer Token |
+| **Estate** | `DELETE` | `/api/wills/{id}/allocations/{allocId}`| Remove asset allocation | Bearer Token |
+| **Contacts** | `GET` | `/api/wills/{id}/contacts` | List trusted contacts & status | Bearer Token |
+| **Contacts** | `POST` | `/api/wills/{id}/contacts` | Add trusted contact | Bearer Token |
+| **Contacts** | `DELETE` | `/api/wills/{id}/contacts/{contactId}` | Deactivate trusted contact | Bearer Token |
+| **Documents** | `POST` | `/api/documents/upload` | Upload & envelope encrypt document | Bearer Token |
+| **Documents** | `GET` | `/api/documents/{id}/download` | Stream decrypt & download document | Bearer Token |
+| **Documents** | `GET` | `/api/documents/will/{willId}` | List encrypted documents for will | Bearer Token |
+| **Verification** | `POST` | `/api/verification/verify` | Submit 2-of-3 contact verification | Contact Token |
+| **Disclosure** | `GET` | `/api/disclosure/{token}` | Scoped estate disclosure package | Single-Use Token |
+| **Disclosure** | `GET` | `/api/disclosure/{token}/documents/{docId}` | Scoped decrypted document download | Single-Use Token |
+| **Jobs** | `POST` | `/internal/jobs/evaluate-inactivity` | Process inactivity warnings & verification | Secret Header |
+| **Jobs** | `POST` | `/internal/jobs/recover-stalled-releases` | Recover expired release worker leases | Secret Header |
+| **Jobs** | `POST` | `/internal/jobs/execute-releases` | Process and disburse release packages | Secret Header |
+
+---
+
+## 6. Getting Started
 
 ### Prerequisites
 - Java 21 JDK
 - Node.js 18+ and npm
 - Maven 3.9+ (or use the included `./mvnw` wrapper)
 
+### Environment Configuration
+Copy `.env.example` to configure the backend and frontend environments:
+```bash
+cp .env.example .env
+```
+
 ### Running Backend Tests
 ```bash
 cd backend
 ./mvnw clean test
 ```
+*Note: All 128 tests execute in-memory with H2 and standard mock providers.*
 
 ### Running the Backend Server
 ```bash
@@ -98,9 +171,9 @@ npm run dev
 
 ---
 
-## 5. Security & Documentation
+## 7. Security & Documentation
 
 For detailed security guidelines and architectural models, consult:
-- [SECURITY.md](file:///C:/Users/harsh/Projects/digital-will/SECURITY.md): Cryptographic model, storage security, and vulnerability reporting.
+- [SECURITY.md](file:///C:/Users/harsh/Projects/digital-will/SECURITY.md): Cryptographic model, storage security, and authentication boundary.
 - [docs/architecture-phase2.md](file:///C:/Users/harsh/Projects/digital-will/docs/architecture-phase2.md): Comprehensive Phase 2 architectural specification.
 - [docs/state-machine.md](file:///C:/Users/harsh/Projects/digital-will/docs/state-machine.md): Authoritative state engine invariants and transitions.
