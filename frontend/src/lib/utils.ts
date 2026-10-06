@@ -47,43 +47,43 @@ export function getStateBadgeColor(state: SuccessionState): string {
     case 'EXECUTING':
       return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 animate-pulse';
     case 'EXECUTED':
-      return 'bg-gray-500/10 text-gray-400 border-gray-500/30';
+      return 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30';
     default:
       return 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30';
   }
 }
 
 export function mapErrorToUIState(err: unknown): { state: UIState; message: string } {
-  if (err instanceof Error && 'code' in err) {
-    const apiErr = err as unknown as { code: string; status: number; message: string };
-    switch (apiErr.code) {
-      case 'INVALID_VERIFICATION_TOKEN':
-      case 'INVALID_DISCLOSURE_TOKEN':
-      case 'INVALID_ARGUMENT':
-        return { state: 'validation_error', message: apiErr.message };
-      case 'VERIFICATION_TOKEN_EXPIRED':
-      case 'DISCLOSURE_TOKEN_EXPIRED':
-        return { state: 'expired', message: 'The access token has expired.' };
-      case 'VERIFICATION_TOKEN_REVOKED':
-      case 'DISCLOSURE_TOKEN_REVOKED':
-        return { state: 'conflict', message: 'The access token has been revoked.' };
-      case 'VERIFICATION_TOKEN_ALREADY_USED':
-      case 'ALREADY_CONFIRMED':
-        return { state: 'conflict', message: 'This token has already been confirmed.' };
-      case 'INVALID_STATE_TRANSITION':
-      case 'INVALID_STATE':
-      case 'DISCLOSURE_NOT_READY':
-        return { state: 'conflict', message: apiErr.message };
-      case 'DOCUMENT_NOT_FOUND':
-        return { state: 'not_found', message: 'Requested resource not found.' };
-      case 'FORBIDDEN':
-        return { state: 'forbidden', message: 'Access denied.' };
-      default:
-        if (apiErr.status >= 500) {
-          return { state: 'server_error', message: 'A secure backend error occurred. Please try again.' };
-        }
-        return { state: 'server_error', message: apiErr.message };
+  if (err instanceof Error && 'status' in err) {
+    const apiErr = err as unknown as { code?: string; status: number; message: string };
+    if (apiErr.status === 401) {
+      return { state: 'unauthorized', message: 'Authentication required. Please log in.' };
     }
+    if (apiErr.status === 403) {
+      return { state: 'forbidden', message: apiErr.message || 'Access denied. You do not own this resource.' };
+    }
+    if (apiErr.status === 404) {
+      return { state: 'not_found', message: apiErr.message || 'Requested resource not found.' };
+    }
+    if (apiErr.status === 409) {
+      return { state: 'conflict', message: apiErr.message || 'Conflict detected. Operation not permitted in current state.' };
+    }
+    if (apiErr.status === 410) {
+      return { state: 'expired', message: apiErr.message || 'The token has expired or been revoked.' };
+    }
+    if (apiErr.status === 400 || apiErr.status === 422) {
+      return { state: 'validation_error', message: apiErr.message || 'Validation error. Please verify input data.' };
+    }
+    if (apiErr.status === 429) {
+      return { state: 'retrying', message: 'Rate limit exceeded. Please wait and try again.' };
+    }
+    if (apiErr.status >= 500) {
+      return { state: 'server_error', message: 'Backend service error. Please try again later.' };
+    }
+    return { state: 'server_error', message: apiErr.message || 'An unexpected error occurred.' };
+  }
+  if (err instanceof Error) {
+    return { state: 'network_error', message: err.message || 'Network connection error.' };
   }
   return { state: 'network_error', message: 'Network connection error. Please check your connection and retry.' };
 }
