@@ -131,4 +131,46 @@ class WillOwnershipIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVALID_STATE"));
     }
+
+    @Test
+    @DisplayName("Workflow 2: User B cannot view User A's allocations -> 403 Forbidden")
+    void userBCannotAccessUserAAllocations() throws Exception {
+        mockMvc.perform(get("/api/wills/" + willAId + "/allocations")
+                        .header("Authorization", "Bearer " + userBToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    @DisplayName("Workflow 2: User B cannot create allocation on User A's Will -> 403 Forbidden")
+    void userBCannotAllocateUserAWill() throws Exception {
+        mockMvc.perform(post("/api/wills/" + willAId + "/allocations")
+                        .header("Authorization", "Bearer " + userBToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "assetId", UUID.randomUUID(),
+                                "beneficiaryId", UUID.randomUUID(),
+                                "sharePercentage", 100
+                        ))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    @DisplayName("Workflow 2: User B cannot view User A's contacts -> 403 Forbidden")
+    void userBCannotAccessUserAContacts() throws Exception {
+        mockMvc.perform(get("/api/wills/" + willAId + "/contacts")
+                        .header("Authorization", "Bearer " + userBToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    @DisplayName("Workflow 2: User B cannot view User A's review checklist -> 403 Forbidden")
+    void userBCannotAccessUserAReview() throws Exception {
+        mockMvc.perform(get("/api/wills/" + willAId + "/review")
+                        .header("Authorization", "Bearer " + userBToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
 }

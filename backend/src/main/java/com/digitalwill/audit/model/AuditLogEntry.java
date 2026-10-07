@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * JPA entity representing an immutable, hash-chained audit record.
+ * JPA entity representing a tamper-evident, hash-chained audit record.
  */
 @Entity
 @Table(name = "audit_logs")

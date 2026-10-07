@@ -327,6 +327,7 @@ public class EstateController {
             @AuthenticationPrincipal UserPrincipal principal) {
         checkOwnership(id, principal);
         AssetAllocation allocation = estateService.allocateAsset(
+                id,
                 request.assetId(),
                 request.beneficiaryId(),
                 request.sharePercentage(),

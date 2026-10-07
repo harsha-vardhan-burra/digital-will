@@ -196,14 +196,21 @@ public class EstateService {
     }
 
     @Transactional
-    public AssetAllocation allocateAsset(UUID assetId, UUID beneficiaryId, int sharePercentage, String instructions) {
+    public AssetAllocation allocateAsset(UUID willId, UUID assetId, UUID beneficiaryId, int sharePercentage, String instructions) {
         Asset asset = assetRepository.findById(assetId)
                 .orElseThrow(() -> new IllegalArgumentException("Asset not found with ID: " + assetId));
+        if (willId != null && !asset.getWillId().equals(willId)) {
+            throw new IllegalArgumentException("Asset does not belong to Will: " + willId);
+        }
         Beneficiary beneficiary = beneficiaryRepository.findById(beneficiaryId)
                 .orElseThrow(() -> new IllegalArgumentException("Beneficiary not found with ID: " + beneficiaryId));
 
         if (!asset.getWillId().equals(beneficiary.getWillId())) {
             throw new IllegalArgumentException("Asset and Beneficiary must belong to the same Will");
+        }
+
+        if (sharePercentage <= 0 || sharePercentage > 100) {
+            throw new IllegalArgumentException("Share percentage must be between 1 and 100");
         }
 
         // Validate that total allocation for this asset does not exceed 100%
@@ -226,6 +233,11 @@ public class EstateService {
 
         log.info("Asset [{}] allocated to Beneficiary [{}] ({}%)", assetId, beneficiaryId, sharePercentage);
         return saved;
+    }
+
+    @Transactional
+    public AssetAllocation allocateAsset(UUID assetId, UUID beneficiaryId, int sharePercentage, String instructions) {
+        return allocateAsset(null, assetId, beneficiaryId, sharePercentage, instructions);
     }
 
     public List<AssetAllocation> listAllocations(UUID willId) {
@@ -280,7 +292,7 @@ public class EstateService {
             warnings.add("Fewer than 3 trusted contacts configured (" + activeContactCount + "/3). At least 3 recommended for 2-of-3 quorum.");
         }
 
-        boolean ready = hasAssets && hasBeneficiaries && hasQuorumContacts;
+        boolean ready = hasAssets && hasBeneficiaries && hasQuorumContacts && allFullyAllocated;
 
         Map<UUID, String> assetNames = new HashMap<>();
         for (Asset a : assets) assetNames.put(a.getId(), a.getTitle());
