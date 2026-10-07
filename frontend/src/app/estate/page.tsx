@@ -373,6 +373,18 @@ export default function EstatePage() {
     }
   };
 
+  // Loading state
+  if (uiState === 'loading') {
+    return (
+      <div className="max-w-md mx-auto py-24 text-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-emerald-400">
+          <RotateCcw className="w-6 h-6 animate-spin" />
+        </div>
+        <p className="text-sm text-zinc-400">Loading your Digital Will estate plan...</p>
+      </div>
+    );
+  }
+
   // If not logged in
   if (uiState === 'unauthorized') {
     return (
@@ -393,6 +405,45 @@ export default function EstatePage() {
           <span>Sign In or Register</span>
           <ArrowRight className="w-4 h-4" />
         </Link>
+      </div>
+    );
+  }
+
+  // Forbidden state (403)
+  if (uiState === 'forbidden') {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center space-y-6">
+        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-red-400">
+          <Lock className="w-7 h-7" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-zinc-100">Access Denied</h2>
+          <p className="text-sm text-zinc-400">{errorMessage || 'You do not own this estate.'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Server error (5xx) or Network error
+  if (uiState === 'server_error' || uiState === 'network_error') {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center space-y-6">
+        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-red-400">
+          <AlertCircle className="w-7 h-7" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-zinc-100">
+            {uiState === 'network_error' ? 'Network Connection Error' : 'Service Unavailable'}
+          </h2>
+          <p className="text-sm text-zinc-400">{errorMessage || 'Failed to communicate with the estate server.'}</p>
+        </div>
+        <button
+          onClick={() => loadInitial()}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium transition-colors"
+        >
+          <RotateCcw className="w-4 h-4" />
+          <span>Retry Connection</span>
+        </button>
       </div>
     );
   }

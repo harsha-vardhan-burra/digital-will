@@ -119,6 +119,22 @@ export default function DocumentsPage() {
     );
   }
 
+  if (uiState === 'forbidden') {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center space-y-6">
+        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-red-400">
+          <Lock className="w-7 h-7" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-zinc-100">Access Denied</h2>
+          <p className="text-sm text-zinc-400">
+            {errorMessage || 'You do not own this document vault.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <div>
