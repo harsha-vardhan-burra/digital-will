@@ -1,34 +1,63 @@
 'use client';
 
-import React, { useState } from 'react';
-import { api } from '@/lib/api';
-import { DocumentResponse, UIState } from '@/lib/types';
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { api, getAuthToken } from '@/lib/api';
+import { DocumentResponse, UIState, WillResponse } from '@/lib/types';
 import { formatBytes, formatDate, mapErrorToUIState } from '@/lib/utils';
-import { Lock, Upload, Download, CheckCircle2, AlertCircle, FileText, Shield, RotateCcw } from 'lucide-react';
+import { Lock, Upload, Download, CheckCircle2, AlertCircle, FileText, Shield, RotateCcw, ArrowRight } from 'lucide-react';
 
 export default function DocumentsPage() {
+  const [will, setWill] = useState<WillResponse | null>(null);
   const [willId, setWillId] = useState('');
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const [listState, setListState] = useState<UIState>('idle');
+  const [uiState, setUiState] = useState<UIState>('idle');
   const [uploadState, setUploadState] = useState<UIState>('idle');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const loadDocuments = async (id: string) => {
+  const loadDocuments = useCallback(async (id: string) => {
     if (!id.trim()) return;
-    setListState('loading');
+    setUiState('loading');
     setErrorMessage(null);
     try {
       const docs = await api.listDocuments(id.trim());
       setDocuments(docs);
-      setListState('success');
+      setUiState('success');
     } catch (err: unknown) {
       const { state, message } = mapErrorToUIState(err);
-      setListState(state);
+      setUiState(state);
       setErrorMessage(message);
     }
-  };
+  }, []);
+
+  const loadInitial = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setUiState('unauthorized');
+      return;
+    }
+
+    try {
+      const myWill = await api.getMyWill();
+      if (myWill) {
+        setWill(myWill);
+        setWillId(myWill.id);
+        await loadDocuments(myWill.id);
+      }
+    } catch (err: unknown) {
+      const { state, message } = mapErrorToUIState(err);
+      setUiState(state);
+      setErrorMessage(message);
+    }
+  }, [loadDocuments]);
+
+  useEffect(() => {
+    loadInitial();
+  }, [loadInitial]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,11 +69,12 @@ export default function DocumentsPage() {
 
     setUploadState('loading');
     setErrorMessage(null);
+    setSuccessMessage(null);
     try {
       await api.uploadDocument(willId.trim(), selectedFile);
       setUploadState('success');
       setSelectedFile(null);
-      // Refresh documents
+      setSuccessMessage('Document uploaded and envelope-encrypted (AES-256-GCM).');
       await loadDocuments(willId.trim());
     } catch (err: unknown) {
       const { state, message } = mapErrorToUIState(err);
@@ -52,6 +82,58 @@ export default function DocumentsPage() {
       setErrorMessage(message);
     }
   };
+
+  const handleDownload = async (doc: DocumentResponse) => {
+    setDownloadingId(doc.id);
+    setErrorMessage(null);
+    try {
+      await api.downloadDocument(doc.id, willId || doc.willId, doc.fileName);
+    } catch (err: unknown) {
+      const { message } = mapErrorToUIState(err);
+      setErrorMessage(message);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  if (uiState === 'unauthorized') {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center space-y-6">
+        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-blue-400">
+          <Lock className="w-7 h-7" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-zinc-100">Authentication Required</h2>
+          <p className="text-sm text-zinc-400">
+            Encrypted documents require authentication to verify owner authorization.
+          </p>
+        </div>
+        <Link
+          href="/auth"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+        >
+          <span>Sign In or Register</span>
+          <ArrowRight className="w-4 h-4" />
+        </Link>
+      </div>
+    );
+  }
+
+  if (uiState === 'forbidden') {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center space-y-6">
+        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-red-400">
+          <Lock className="w-7 h-7" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-zinc-100">Access Denied</h2>
+          <p className="text-sm text-zinc-400">
+            {errorMessage || 'You do not own this document vault.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -72,10 +154,24 @@ export default function DocumentsPage() {
           <span className="font-semibold text-blue-200">Envelope Encryption Model</span>
           <p className="text-blue-300/80 mt-0.5">
             Every document is encrypted with a unique 256-bit AES Data Encryption Key (DEK) wrapped under the platform Master Key.
-            SHA-256 integrity checksums are strictly validated on retrieval.
+            Plaintext is never written to disk or database. SHA-256 integrity checksums are verified on retrieval.
           </p>
         </div>
       </div>
+
+      {/* Messages */}
+      {errorMessage && (
+        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+      {successMessage && (
+        <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{successMessage}</span>
+        </div>
+      )}
 
       {/* Upload and Will Selection Panel */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -94,6 +190,7 @@ export default function DocumentsPage() {
                 onChange={(e) => setWillId(e.target.value)}
                 placeholder="Enter Will ID (UUID)..."
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                required
               />
             </div>
             <div>
@@ -102,6 +199,7 @@ export default function DocumentsPage() {
                 type="file"
                 onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
                 className="w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700"
+                required
               />
             </div>
             <button
@@ -119,13 +217,6 @@ export default function DocumentsPage() {
               )}
             </button>
           </form>
-
-          {uploadState === 'success' && (
-            <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Document uploaded and envelope-encrypted successfully.</span>
-            </div>
-          )}
         </div>
 
         {/* Load Documents by Will ID */}
@@ -144,25 +235,17 @@ export default function DocumentsPage() {
             />
             <button
               onClick={() => loadDocuments(willId)}
-              disabled={listState === 'loading'}
+              disabled={uiState === 'loading'}
               className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium transition-colors"
             >
-              {listState === 'loading' ? 'Loading...' : 'Fetch'}
+              {uiState === 'loading' ? 'Loading...' : 'Fetch'}
             </button>
           </div>
           <p className="text-xs text-zinc-500">
-            Fetch all document metadata associated with this will. Downloads are streamed and decrypted on-the-fly.
+            Fetch all document metadata associated with this will. Downloads are streamed and decrypted on-the-fly using the authorized session.
           </p>
         </div>
       </div>
-
-      {/* Error Message */}
-      {errorMessage && (
-        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
 
       {/* Documents Table */}
       <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/30 space-y-4">
@@ -194,18 +277,19 @@ export default function DocumentsPage() {
                     </td>
                     <td className="py-3">{formatBytes(doc.fileSize)}</td>
                     <td className="py-3 font-mono text-[11px] text-zinc-500">{doc.contentType}</td>
-                    <td className="py-3 font-mono text-[10px] text-zinc-500 truncate max-w-[150px]">
+                    <td className="py-3 font-mono text-[10px] text-zinc-500 truncate max-w-[150px]" title={doc.checksumSha256}>
                       {doc.checksumSha256}
                     </td>
                     <td className="py-3">{formatDate(doc.createdAt)}</td>
                     <td className="py-3 text-right">
-                      <a
-                        href={api.getDownloadUrl(doc.id, doc.willId)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition-colors"
+                      <button
+                        onClick={() => handleDownload(doc)}
+                        disabled={downloadingId === doc.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition-colors disabled:opacity-50"
                       >
                         <Download className="w-3 h-3" />
-                        <span>Download</span>
-                      </a>
+                        <span>{downloadingId === doc.id ? 'Decrypting...' : 'Download'}</span>
+                      </button>
                     </td>
                   </tr>
                 ))}

@@ -32,12 +32,32 @@ export interface ApiErrorResponse {
   details?: Record<string, string>;
 }
 
+export interface User {
+  id: string;
+  email: string;
+  fullName: string;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
+
 export interface WillResponse {
   id: string;
   ownerId: string;
   title: string;
   state: SuccessionState;
   lastVerifiedActivityAt: string;
+  warningSentAt?: string;
+  finalWarningSentAt?: string;
+  verificationStartedAt?: string;
+  verifiedAt?: string;
+  releaseAfter?: string;
+  executingAt?: string;
+  executedAt?: string;
+  verificationCycle?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,6 +99,56 @@ export interface AssetAllocation {
   sharePercentage: number;
   instructions?: string;
   allocatedAt: string;
+}
+
+export interface WillContactDetailed {
+  associationId: string;
+  contactId: string;
+  willId: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  addedAt: string;
+  confirmedCurrentCycle: boolean;
+}
+
+export interface AllocationReviewItem {
+  allocationId: string;
+  assetId: string;
+  assetTitle: string;
+  beneficiaryId: string;
+  beneficiaryName: string;
+  sharePercentage: number;
+  instructions?: string;
+}
+
+export interface WillReview {
+  willId: string;
+  title: string;
+  state: SuccessionState;
+  ownerId: string;
+  assetCount: number;
+  beneficiaryCount: number;
+  allocationCount: number;
+  documentCount: number;
+  activeTrustedContactCount: number;
+  hasAssets: boolean;
+  hasBeneficiaries: boolean;
+  allAssetsFullyAllocated: boolean;
+  hasQuorumContacts: boolean;
+  readyForActivation: boolean;
+  allocations: AllocationReviewItem[];
+}
+
+export interface AuditLogDto {
+  sequenceNumber: number;
+  action: string;
+  status: string;
+  resourceType: string;
+  resourceId?: string;
+  detailsJson: string;
+  createdAt: string;
+  entryHash: string;
 }
 
 export interface DocumentResponse {

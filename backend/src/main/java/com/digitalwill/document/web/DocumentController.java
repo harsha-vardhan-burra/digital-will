@@ -1,13 +1,17 @@
 package com.digitalwill.document.web;
 
+import com.digitalwill.auth.security.UserPrincipal;
 import com.digitalwill.document.exception.DocumentNotFoundException;
 import com.digitalwill.document.model.EncryptedDocument;
 import com.digitalwill.document.repository.EncryptedDocumentRepository;
 import com.digitalwill.document.service.DocumentService;
+import com.digitalwill.state.model.WillStateEntity;
+import com.digitalwill.state.repository.WillStateRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,11 +27,24 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final EncryptedDocumentRepository documentRepository;
+    private final WillStateRepository willStateRepository;
 
     public DocumentController(DocumentService documentService,
-                              EncryptedDocumentRepository documentRepository) {
+                              EncryptedDocumentRepository documentRepository,
+                              WillStateRepository willStateRepository) {
         this.documentService = Objects.requireNonNull(documentService);
         this.documentRepository = Objects.requireNonNull(documentRepository);
+        this.willStateRepository = Objects.requireNonNull(willStateRepository);
+    }
+
+    private void checkWillOwnership(UUID willId, UserPrincipal principal) {
+        if (principal != null) {
+            WillStateEntity will = willStateRepository.findById(willId)
+                    .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
+            if (!will.getOwnerId().equals(principal.getId())) {
+                throw new SecurityException("Unauthorized: actor is not the owner of Will: " + willId);
+            }
+        }
     }
 
     public record DocumentResponse(
@@ -56,17 +73,21 @@ public class DocumentController {
     public ResponseEntity<DocumentResponse> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam("willId") UUID willId,
-            @RequestParam(value = "ownerId", required = false) UUID ownerId
+            @RequestParam(value = "ownerId", required = false) UUID ownerId,
+            @AuthenticationPrincipal UserPrincipal principal
     ) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Uploaded file must not be empty");
         }
+        checkWillOwnership(willId, principal);
+
+        UUID effectiveOwnerId = (principal != null) ? principal.getId() : ownerId;
         String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.bin";
         String contentType = file.getContentType() != null ? file.getContentType() : MediaType.APPLICATION_OCTET_STREAM_VALUE;
 
         EncryptedDocument saved = documentService.uploadDocument(
                 willId,
-                ownerId,
+                effectiveOwnerId,
                 fileName,
                 contentType,
                 file.getBytes()
@@ -78,11 +99,13 @@ public class DocumentController {
     @GetMapping("/{id}/metadata")
     public ResponseEntity<DocumentResponse> getMetadata(
             @PathVariable UUID id,
-            @RequestParam(value = "willId", required = false) UUID willId
+            @RequestParam(value = "willId", required = false) UUID willId,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
         EncryptedDocument doc = (willId != null)
                 ? documentService.getDocumentMetadata(willId, id)
                 : documentRepository.findById(id).orElseThrow(() -> new DocumentNotFoundException("Document not found with ID: " + id));
+        checkWillOwnership(doc.getWillId(), principal);
         return ResponseEntity.ok(DocumentResponse.fromEntity(doc));
     }
 
@@ -91,13 +114,16 @@ public class DocumentController {
             @PathVariable UUID id,
             @RequestParam(value = "willId", required = false) UUID willId,
             @RequestParam(value = "actorId", required = false, defaultValue = "ANONYMOUS") String actorId,
-            @RequestParam(value = "actorType", required = false, defaultValue = "OWNER") String actorType
+            @RequestParam(value = "actorType", required = false, defaultValue = "OWNER") String actorType,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
         EncryptedDocument doc = (willId != null)
                 ? documentService.getDocumentMetadata(willId, id)
                 : documentRepository.findById(id).orElseThrow(() -> new DocumentNotFoundException("Document not found with ID: " + id));
+        checkWillOwnership(doc.getWillId(), principal);
 
-        byte[] decryptedBytes = documentService.downloadDocument(doc.getWillId(), id, actorId, actorType);
+        String effectiveActorId = (principal != null) ? principal.getId().toString() : actorId;
+        byte[] decryptedBytes = documentService.downloadDocument(doc.getWillId(), id, effectiveActorId, actorType);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + doc.getFileName() + "\"")
@@ -107,7 +133,11 @@ public class DocumentController {
     }
 
     @GetMapping("/will/{willId}")
-    public ResponseEntity<List<DocumentResponse>> listDocuments(@PathVariable UUID willId) {
+    public ResponseEntity<List<DocumentResponse>> listDocuments(
+            @PathVariable UUID willId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        checkWillOwnership(willId, principal);
         List<DocumentResponse> docs = documentService.listDocumentsForWill(willId).stream()
                 .map(DocumentResponse::fromEntity)
                 .toList();

@@ -12,6 +12,7 @@ import java.util.UUID;
 public interface WillContactRepository extends JpaRepository<WillContact, UUID> {
     List<WillContact> findByWillId(UUID willId);
     List<WillContact> findByWillIdAndActiveTrue(UUID willId);
+    long countByWillIdAndActiveTrue(UUID willId);
     Optional<WillContact> findByWillIdAndContactId(UUID willId, UUID contactId);
     boolean existsByWillIdAndContactId(UUID willId, UUID contactId);
 }

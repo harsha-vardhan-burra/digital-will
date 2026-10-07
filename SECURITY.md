@@ -25,14 +25,27 @@ The system is designed with a **fail-closed** security posture: any failure in c
 
 ---
 
-## 3. Storage & Authorization Boundaries
+## 3. Authentication & Authorization Boundaries
 
-### 3.1 Document Storage
+### 3.1 User Authentication & Token Security
+- **Credential Storage:** User passwords are encrypted with standard BCrypt (`strength = 12`) password hashing using secure salts. Plaintext passwords are never logged or stored.
+- **Bearer Tokens:** Session tokens are cryptographically strong random tokens generated with `SecureRandom` (32 bytes / 256 bits).
+- **Hashed Session Tokens:** Raw Bearer tokens are returned exclusively to the authenticating client. The database stores only SHA-256 digests (`token_hash`) in the `user_auth_tokens` table.
+- **Token Invalidation:** Logout immediately marks tokens revoked, and stale tokens can be expired via background eviction or revocation.
+- **Client Session Storage (MVP Limitation):** MVP authentication stores the bearer session token in browser `localStorage`. This is a known deployment limitation because a token accessible to JavaScript can be exposed by an XSS vulnerability. A production deployment should prefer a hardened HttpOnly, Secure, SameSite cookie-based session mechanism or an equivalent security architecture.
+
+### 3.2 Server-Enforced User-to-Will Ownership Boundary
+- **Principal Derivation:** All protected estate, asset, beneficiary, allocation, contact, and document APIs strictly derive the calling user from the authenticated `UserPrincipal` extracted by `TokenAuthenticationFilter`.
+- **Zero Frontend Trust:** Client-supplied owner IDs are never trusted. Attempting to query, modify, or delete a will or sub-resource belonging to another user results in an immediate fail-closed `403 Forbidden`.
+- **Single-Will Invariant:** MVP guarantees exactly one Digital Will per user, enforced at both the relational level (`uq_wills_owner_user_id`) and service level. Subsequent creation attempts fail with `409 Conflict`.
+- **Pre-Decryption Authorization:** Documents cannot be decrypted or streamed without prior ownership validation on the parent will and document record.
+
+### 3.3 Document Storage
 - **MVP Implementation:** Encrypted document blobs are stored locally in a designated secure storage directory.
 - **Path Sanitization:** Storage identifiers are strictly validated to prevent directory traversal (`..`, `:`, `/`, `\` characters are rejected).
 - **Leakage Prevention:** File system paths and operating system internals are sanitized and never leaked to API clients.
 
-### 3.2 Partitioned Controlled Disclosure
+### 3.4 Partitioned Controlled Disclosure
 - **Information Isolation:** Beneficiaries do not receive general estate inventories. Each beneficiary receives access only to assets and documents specifically allocated to them.
 - **Document Access Enforcement:** The server explicitly verifies that requested document IDs reside within the beneficiary's authorized disclosure package. Cross-beneficiary document access attempts are rejected with `403 Forbidden`.
 - **Disclosure Tokens:**
