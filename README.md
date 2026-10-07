@@ -86,8 +86,8 @@ ACTIVE -> INACTIVITY_WARNING -> FINAL_WARNING -> VERIFICATION_PENDING -> VERIFIE
 - **Strict Allocation Enforcement:** Allocations are verified to belong to the owner's will, reference valid assets, and enforce a 100% maximum distribution rule per asset.
 - **Review & Readiness Checklist:** `GET /api/wills/{id}/review` evaluates readiness against 6 key operational criteria before succession enablement.
 
-### 4.3 Five Verified Integration Workflows (100% Test Coverage)
-The system is backed by a 128-test suite, including 5 end-to-end integration workflows:
+### 4.3 Five Core Integration Workflows — All Critical Workflows Covered
+The system is backed by a 133-test backend suite (133 of 133 tests passing), including all 5 core end-to-end integration workflows:
 1. **Workflow 1: End-to-End Estate Setup & Review (`EstateWorkflowIntegrationTest`)**
    - User registration -> will creation -> asset and beneficiary configuration -> 100% allocation -> 3 trusted contacts -> document vault upload -> review checklist verification -> activity check-in -> audit log integrity check.
 2. **Workflow 2: Ownership Boundaries & Single Will Isolation (`WillOwnershipIntegrationTest`)**
@@ -130,9 +130,9 @@ The system is backed by a 128-test suite, including 5 end-to-end integration wor
 | **Verification** | `POST` | `/api/verification/verify` | Submit 2-of-3 contact verification | Contact Token |
 | **Disclosure** | `GET` | `/api/disclosure/{token}` | Scoped estate disclosure package | Single-Use Token |
 | **Disclosure** | `GET` | `/api/disclosure/{token}/documents/{docId}` | Scoped decrypted document download | Single-Use Token |
-| **Jobs** | `POST` | `/internal/jobs/evaluate-inactivity` | Process inactivity warnings & verification | Secret Header |
-| **Jobs** | `POST` | `/internal/jobs/recover-stalled-releases` | Recover expired release worker leases | Secret Header |
-| **Jobs** | `POST` | `/internal/jobs/execute-releases` | Process and disburse release packages | Secret Header |
+| **Jobs** | `POST` | `/internal/jobs/process-inactivity` | Process inactivity warnings & verification | Secret Header |
+| **Jobs** | `POST` | `/internal/jobs/recover-stalled-executions` | Recover expired release worker leases | Secret Header |
+| **Jobs** | `POST` | `/internal/jobs/process-releases` | Process and disburse release packages | Secret Header |
 
 ---
 
@@ -154,7 +154,7 @@ cp .env.example .env
 cd backend
 ./mvnw clean test
 ```
-*Note: All 128 tests execute in-memory with H2 and standard mock providers.*
+*Note: Tests execute in-memory with H2 and standard mock providers.*
 
 ### Running the Backend Server
 ```bash
@@ -174,6 +174,6 @@ npm run dev
 ## 7. Security & Documentation
 
 For detailed security guidelines and architectural models, consult:
-- [SECURITY.md](file:///C:/Users/harsh/Projects/digital-will/SECURITY.md): Cryptographic model, storage security, and authentication boundary.
-- [docs/architecture-phase2.md](file:///C:/Users/harsh/Projects/digital-will/docs/architecture-phase2.md): Comprehensive Phase 2 architectural specification.
-- [docs/state-machine.md](file:///C:/Users/harsh/Projects/digital-will/docs/state-machine.md): Authoritative state engine invariants and transitions.
+- [SECURITY.md](SECURITY.md): Cryptographic model, storage security, and authentication boundary.
+- [docs/architecture-phase2.md](docs/architecture-phase2.md): Comprehensive Phase 2 architectural specification.
+- [docs/state-machine.md](docs/state-machine.md): Authoritative state engine invariants and transitions.

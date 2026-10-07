@@ -32,6 +32,7 @@ The system is designed with a **fail-closed** security posture: any failure in c
 - **Bearer Tokens:** Session tokens are cryptographically strong random tokens generated with `SecureRandom` (32 bytes / 256 bits).
 - **Hashed Session Tokens:** Raw Bearer tokens are returned exclusively to the authenticating client. The database stores only SHA-256 digests (`token_hash`) in the `user_auth_tokens` table.
 - **Token Invalidation:** Logout immediately marks tokens revoked, and stale tokens can be expired via background eviction or revocation.
+- **Client Session Storage (MVP Limitation):** MVP authentication stores the bearer session token in browser `localStorage`. This is a known deployment limitation because a token accessible to JavaScript can be exposed by an XSS vulnerability. A production deployment should prefer a hardened HttpOnly, Secure, SameSite cookie-based session mechanism or an equivalent security architecture.
 
 ### 3.2 Server-Enforced User-to-Will Ownership Boundary
 - **Principal Derivation:** All protected estate, asset, beneficiary, allocation, contact, and document APIs strictly derive the calling user from the authenticated `UserPrincipal` extracted by `TokenAuthenticationFilter`.
