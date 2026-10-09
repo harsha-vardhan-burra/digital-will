@@ -169,6 +169,38 @@ public class AuditAndReleaseSecurityTest {
     }
 
     @Test
+    @DisplayName("ATK-21: Concurrent audit logging produces strictly linear sequence numbers and valid chain")
+    void auditLog_concurrentLogging_producesLinearChain() throws Exception {
+        UUID willId = willStateService.createWill(UUID.randomUUID(), "Concurrent Audit Will").getId();
+        int threads = 10;
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.concurrent.CyclicBarrier barrier = new java.util.concurrent.CyclicBarrier(threads);
+        List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+
+        for (int i = 0; i < threads; i++) {
+            final int index = i;
+            futures.add(executor.submit(() -> {
+                try {
+                    barrier.await();
+                    auditLogService.logCritical(willId, "USER_" + index, "OWNER", AuditAction.OWNER_ACTIVITY,
+                            AuditStatus.SUCCESS, AuditResourceType.WILL, willId.toString(), "{\"thread\":" + index + "}");
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }));
+        }
+
+        for (java.util.concurrent.Future<?> f : futures) {
+            f.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        executor.shutdown();
+
+        AuditVerificationResult result = auditLogService.verifyGlobalIntegrity();
+        assertThat(result.valid()).isTrue();
+        assertThat(result.checkedEntries()).isEqualTo(threads);
+    }
+
+    @Test
     @DisplayName("ATK-22: logCritical operates in calling transaction and aborts on audit failure (fail-closed)")
     void auditLog_logCritical_failsClosedInTransaction() {
         UUID willId = UUID.randomUUID();
