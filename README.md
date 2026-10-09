@@ -86,8 +86,8 @@ ACTIVE -> INACTIVITY_WARNING -> FINAL_WARNING -> VERIFICATION_PENDING -> VERIFIE
 - **Strict Allocation Enforcement:** Allocations are verified to belong to the owner's will, reference valid assets, and enforce a 100% maximum distribution rule per asset.
 - **Review & Readiness Checklist:** `GET /api/wills/{id}/review` evaluates readiness against 6 key operational criteria before succession enablement.
 
-### 4.3 Five Core Integration Workflows — All Critical Workflows Covered
-The system is backed by a 133-test backend suite (133 of 133 tests passing), including all 5 core end-to-end integration workflows:
+### 4.3 Five Core Integration Workflows
+The system is backed by a 199-test backend suite (199 of 199 tests passing, with 66 dedicated Phase 4 security tests):
 1. **Workflow 1: End-to-End Estate Setup & Review (`EstateWorkflowIntegrationTest`)**
    - User registration -> will creation -> asset and beneficiary configuration -> 100% allocation -> 3 trusted contacts -> document vault upload -> review checklist verification -> activity check-in -> audit log integrity check.
 2. **Workflow 2: Ownership Boundaries & Single Will Isolation (`WillOwnershipIntegrationTest`)**
@@ -101,7 +101,24 @@ The system is backed by a 133-test backend suite (133 of 133 tests passing), inc
 
 ---
 
-## 5. API Endpoints
+## 5. Phase 4 Security Verification & Production Hardening
+
+Phase 4 subjected the platform to adversarial security verification against 26 attack vectors documented in [`docs/threat-model-phase4.md`](docs/threat-model-phase4.md):
+- **Adversarial Test Suites (66 Security Tests):**
+  - `AuthSecurityAbuseTest` (7 tests): Credential stuffing defense, generic error masking, duplicate registration, logout token invalidation, 30-day token expiry, malformed/oversized headers.
+  - `AuthorizationIdorSecurityTest` (15 tests): Cross-user IDOR prevention across wills, assets, beneficiaries, allocations, contacts, documents, and audit logs; null-principal fail-closed controller enforcement; cross-will allocation poisoning prevention.
+  - `StateMachineAbuseSecurityTest` (7 tests): Invalid state skipping prevention, immutable terminal `EXECUTED` state, multi-threaded transition race isolation (8 threads, 1 winner), owner activity reset.
+  - `VerificationAbuseSecurityTest` (7 tests): Duplicate contact confirmation rejection, token idempotency, stale cycle token replay (410 Gone), expired/forged tokens, 2-of-3 quorum validation.
+  - `CryptoAndStorageSecurityTest` (9 tests): AES-256-GCM CPA security (unique IVs), AEAD ciphertext and AAD tamper detection, DEK corruption detection, path traversal rejection (`..`, `/etc/passwd`, absolute paths), single-use disclosure token replay defense.
+  - `AuditAndReleaseSecurityTest` (12 tests): Audit hash chain tamper detection (payload, prev_hash, entry_hash, row deletion), fail-closed `logCritical` transaction rollback, internal job secret verification (`X-Internal-Job-Secret`), release execution idempotency, crash recovery lease expiration.
+  - `RateLimitingSecurityTest` (5 tests): Sliding-window burst mitigation on login, registration, verification confirmation, and disclosure access returning `429 Too Many Requests` with `Retry-After`.
+  - `ProductionSecurityConfigurationTest` (4 tests): Production security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy), strict CORS origin whitelisting, Actuator restriction, stack trace masking.
+- **Fail-Closed Controller Hardening:** Controllers enforce server-derived identity exclusively; client-supplied owner IDs are ignored and null principals trigger immediate security exceptions.
+- **Concurrency Serialization:** Audit log entries are synchronized across database commit boundaries to guarantee strictly monotonic sequences under multi-worker concurrency.
+
+---
+
+## 6. API Endpoints
 
 | Category | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- | :--- |
@@ -136,7 +153,7 @@ The system is backed by a 133-test backend suite (133 of 133 tests passing), inc
 
 ---
 
-## 6. Getting Started
+## 7. Getting Started
 
 ### Prerequisites
 - Java 21 JDK
@@ -171,9 +188,10 @@ npm run dev
 
 ---
 
-## 7. Security & Documentation
+## 8. Security & Documentation
 
 For detailed security guidelines and architectural models, consult:
 - [SECURITY.md](SECURITY.md): Cryptographic model, storage security, and authentication boundary.
+- [docs/threat-model-phase4.md](docs/threat-model-phase4.md): Phase 4 Threat Model and 26-vector attack matrix.
 - [docs/architecture-phase2.md](docs/architecture-phase2.md): Comprehensive Phase 2 architectural specification.
 - [docs/state-machine.md](docs/state-machine.md): Authoritative state engine invariants and transitions.
