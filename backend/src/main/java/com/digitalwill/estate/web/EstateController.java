@@ -62,8 +62,11 @@ public class EstateController {
     }
 
     private WillStateEntity checkOwnership(UUID willId, UserPrincipal principal) {
+        if (principal == null) {
+            throw new SecurityException("Authentication required");
+        }
         WillStateEntity will = willStateService.getWillOrThrow(willId);
-        if (principal != null && !will.getOwnerId().equals(principal.getId())) {
+        if (!will.getOwnerId().equals(principal.getId())) {
             throw new SecurityException("Unauthorized: actor is not the owner of Will: " + willId);
         }
         return will;
@@ -168,7 +171,10 @@ public class EstateController {
     public ResponseEntity<WillResponse> createWill(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CreateWillRequest request) {
-        UUID owner = (principal != null) ? principal.getId() : (request.ownerId() != null ? request.ownerId() : UUID.randomUUID());
+        if (principal == null) {
+            throw new SecurityException("Authentication required");
+        }
+        UUID owner = principal.getId();
 
         // Enforce 1 Will per user MVP constraint
         List<WillStateEntity> existing = willStateRepository.findByOwnerId(owner);

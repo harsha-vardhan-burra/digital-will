@@ -38,13 +38,21 @@ public class DocumentController {
     }
 
     private void checkWillOwnership(UUID willId, UserPrincipal principal) {
-        if (principal != null) {
-            WillStateEntity will = willStateRepository.findById(willId)
-                    .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
-            if (!will.getOwnerId().equals(principal.getId())) {
-                throw new SecurityException("Unauthorized: actor is not the owner of Will: " + willId);
-            }
+        if (principal == null) {
+            throw new SecurityException("Authentication required");
         }
+        WillStateEntity will = willStateRepository.findById(willId)
+                .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
+        if (!will.getOwnerId().equals(principal.getId())) {
+            throw new SecurityException("Unauthorized: actor is not the owner of Will: " + willId);
+        }
+    }
+
+    private static String sanitizeHeaderFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "document.bin";
+        }
+        return fileName.replaceAll("[\"\\r\\n\\x00-\\x1f]", "_");
     }
 
     public record DocumentResponse(
@@ -73,15 +81,17 @@ public class DocumentController {
     public ResponseEntity<DocumentResponse> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam("willId") UUID willId,
-            @RequestParam(value = "ownerId", required = false) UUID ownerId,
             @AuthenticationPrincipal UserPrincipal principal
     ) throws IOException {
+        if (principal == null) {
+            throw new SecurityException("Authentication required");
+        }
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Uploaded file must not be empty");
         }
         checkWillOwnership(willId, principal);
 
-        UUID effectiveOwnerId = (principal != null) ? principal.getId() : ownerId;
+        UUID effectiveOwnerId = principal.getId();
         String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.bin";
         String contentType = file.getContentType() != null ? file.getContentType() : MediaType.APPLICATION_OCTET_STREAM_VALUE;
 
@@ -102,6 +112,9 @@ public class DocumentController {
             @RequestParam(value = "willId", required = false) UUID willId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        if (principal == null) {
+            throw new SecurityException("Authentication required");
+        }
         EncryptedDocument doc = (willId != null)
                 ? documentService.getDocumentMetadata(willId, id)
                 : documentRepository.findById(id).orElseThrow(() -> new DocumentNotFoundException("Document not found with ID: " + id));
@@ -113,20 +126,21 @@ public class DocumentController {
     public ResponseEntity<byte[]> downloadDocument(
             @PathVariable UUID id,
             @RequestParam(value = "willId", required = false) UUID willId,
-            @RequestParam(value = "actorId", required = false, defaultValue = "ANONYMOUS") String actorId,
-            @RequestParam(value = "actorType", required = false, defaultValue = "OWNER") String actorType,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        if (principal == null) {
+            throw new SecurityException("Authentication required");
+        }
         EncryptedDocument doc = (willId != null)
                 ? documentService.getDocumentMetadata(willId, id)
                 : documentRepository.findById(id).orElseThrow(() -> new DocumentNotFoundException("Document not found with ID: " + id));
         checkWillOwnership(doc.getWillId(), principal);
 
-        String effectiveActorId = (principal != null) ? principal.getId().toString() : actorId;
-        byte[] decryptedBytes = documentService.downloadDocument(doc.getWillId(), id, effectiveActorId, actorType);
+        String effectiveActorId = principal.getId().toString();
+        byte[] decryptedBytes = documentService.downloadDocument(doc.getWillId(), id, effectiveActorId, "OWNER");
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + doc.getFileName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + sanitizeHeaderFileName(doc.getFileName()) + "\"")
                 .header(HttpHeaders.CONTENT_TYPE, doc.getContentType())
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(decryptedBytes.length))
                 .body(decryptedBytes);

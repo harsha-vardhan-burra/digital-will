@@ -97,3 +97,6 @@ storage/
 
 .DS_Store
 Thumbs.db
+
+# Upgrade and modernize hooks
+.github/modernize/

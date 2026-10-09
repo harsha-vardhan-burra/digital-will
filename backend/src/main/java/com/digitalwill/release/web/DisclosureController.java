@@ -69,9 +69,16 @@ public class DisclosureController {
         );
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + doc.getFileName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + sanitizeHeaderFileName(doc.getFileName()) + "\"")
                 .contentType(MediaType.parseMediaType(doc.getContentType()))
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(decrypted.length))
                 .body(decrypted);
+    }
+
+    private static String sanitizeHeaderFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "document.bin";
+        }
+        return fileName.replaceAll("[\"\\r\\n\\x00-\\x1f]", "_");
     }
 }

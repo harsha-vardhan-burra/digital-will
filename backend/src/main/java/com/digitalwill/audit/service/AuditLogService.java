@@ -39,68 +39,91 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
     private final TimeProvider timeProvider;
+    private final Object auditLock = new Object();
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
-    public AuditLogService(AuditLogRepository auditLogRepository, TimeProvider timeProvider) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public AuditLogService(AuditLogRepository auditLogRepository,
+                           TimeProvider timeProvider,
+                           org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.auditLogRepository = Objects.requireNonNull(auditLogRepository, "auditLogRepository must not be null");
         this.timeProvider = Objects.requireNonNull(timeProvider, "timeProvider must not be null");
+        this.transactionTemplate = transactionManager != null ?
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager) : null;
+    }
+
+    public AuditLogService(AuditLogRepository auditLogRepository, TimeProvider timeProvider) {
+        this(auditLogRepository, timeProvider, null);
     }
 
     /**
      * Logs an audit event with fail-closed semantics for critical security events.
-     * Synchronized to guarantee linear sequence numbers and chain continuity.
+     * Synchronized on auditLock with transactionTemplate ensuring commits complete before lock release.
      */
-    @Transactional(propagation = Propagation.REQUIRED)
-    public synchronized AuditLogEntry logEvent(UUID willId, String actorId, String actorType,
-                                               AuditAction action, AuditStatus status,
-                                               AuditResourceType resourceType, String resourceId,
-                                               String detailsJson, boolean isCritical) {
-        try {
-            Instant now = timeProvider.now();
-            Optional<AuditLogEntry> latestEntryOpt = auditLogRepository.findTopByOrderBySequenceNumberDesc();
-
-            long nextSequence = latestEntryOpt.map(e -> e.getSequenceNumber() + 1).orElse(1L);
-            String prevHash = latestEntryOpt.map(AuditLogEntry::getEntryHash).orElse(GENESIS_PREV_HASH);
-
-            String canonicalPayload = computeCanonicalString(
-                    nextSequence, now, willId, actorType, actorId, action, status, resourceType, resourceId, detailsJson, prevHash
-            );
-            String entryHash = computeSha256Hex(canonicalPayload);
-
-            AuditLogEntry entry = new AuditLogEntry(
-                    UUID.randomUUID(),
-                    nextSequence,
-                    willId,
-                    actorId,
-                    actorType,
-                    action,
-                    status,
-                    resourceType,
-                    resourceId,
-                    detailsJson,
-                    now,
-                    prevHash,
-                    entryHash
-            );
-
-            AuditLogEntry saved = auditLogRepository.saveAndFlush(entry);
-            log.info("Audit entry [{}] recorded: action=[{}] actor=[{}] willId=[{}] status=[{}] hash=[{}]",
-                    nextSequence, action, actorId, willId, status, entryHash);
-            return saved;
-        } catch (Exception e) {
-            String errorMsg = "Failed to record audit log for action " + action + ": " + e.getMessage();
-            log.error(errorMsg, e);
-            if (isCritical) {
-                // Fail closed: abort the calling transaction
-                throw new AuditPersistenceException(errorMsg, e);
+    public AuditLogEntry logEvent(UUID willId, String actorId, String actorType,
+                                  AuditAction action, AuditStatus status,
+                                  AuditResourceType resourceType, String resourceId,
+                                  String detailsJson, boolean isCritical) {
+        synchronized (auditLock) {
+            try {
+                if (transactionTemplate != null) {
+                    return transactionTemplate.execute(txStatus ->
+                            doLogEvent(willId, actorId, actorType, action, status, resourceType, resourceId, detailsJson));
+                } else {
+                    return doLogEvent(willId, actorId, actorType, action, status, resourceType, resourceId, detailsJson);
+                }
+            } catch (Exception e) {
+                String errorMsg = "Failed to record audit log for action " + action + ": " + e.getMessage();
+                log.error(errorMsg, e);
+                if (isCritical) {
+                    // Fail closed: abort calling transaction
+                    throw new AuditPersistenceException(errorMsg, e);
+                }
+                return null;
             }
-            return null;
         }
+    }
+
+    private AuditLogEntry doLogEvent(UUID willId, String actorId, String actorType,
+                                     AuditAction action, AuditStatus status,
+                                     AuditResourceType resourceType, String resourceId,
+                                     String detailsJson) {
+        Instant now = timeProvider.now();
+        Optional<AuditLogEntry> latestEntryOpt = auditLogRepository.findTopByOrderBySequenceNumberDesc();
+
+        long nextSequence = latestEntryOpt.map(e -> e.getSequenceNumber() + 1).orElse(1L);
+        String prevHash = latestEntryOpt.map(AuditLogEntry::getEntryHash).orElse(GENESIS_PREV_HASH);
+
+        String canonicalPayload = computeCanonicalString(
+                nextSequence, now, willId, actorType, actorId, action, status, resourceType, resourceId, detailsJson, prevHash
+        );
+        String entryHash = computeSha256Hex(canonicalPayload);
+
+        AuditLogEntry entry = new AuditLogEntry(
+                UUID.randomUUID(),
+                nextSequence,
+                willId,
+                actorId,
+                actorType,
+                action,
+                status,
+                resourceType,
+                resourceId,
+                detailsJson,
+                now,
+                prevHash,
+                entryHash
+        );
+
+        AuditLogEntry saved = auditLogRepository.saveAndFlush(entry);
+        log.info("Audit entry [{}] recorded: action=[{}] actor=[{}] willId=[{}] status=[{}] hash=[{}]",
+                nextSequence, action, actorId, willId, status, entryHash);
+        return saved;
     }
 
     /**
      * Convenience method for critical audit events (always fails closed).
      */
-    @Transactional(propagation = Propagation.REQUIRED)
     public AuditLogEntry logCritical(UUID willId, String actorId, String actorType,
                                      AuditAction action, AuditStatus status,
                                      AuditResourceType resourceType, String resourceId,
@@ -111,7 +134,6 @@ public class AuditLogService {
     /**
      * Convenience method for non-critical audit events.
      */
-    @Transactional(propagation = Propagation.REQUIRED)
     public AuditLogEntry logNonCritical(UUID willId, String actorId, String actorType,
                                         AuditAction action, AuditStatus status,
                                         AuditResourceType resourceType, String resourceId,

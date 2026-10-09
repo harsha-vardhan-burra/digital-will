@@ -47,6 +47,28 @@ public class VerificationService {
     private final WillStateService willStateService;
     private final VerificationTokenService tokenService;
     private final TimeProvider timeProvider;
+    private final com.digitalwill.notification.service.NotificationDeliveryService notificationDeliveryService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public VerificationService(TrustedContactRepository trustedContactRepository,
+                               WillContactRepository willContactRepository,
+                               VerificationRequestRepository verificationRequestRepository,
+                               ContactConfirmationRepository confirmationRepository,
+                               WillStateRepository willStateRepository,
+                               WillStateService willStateService,
+                               VerificationTokenService tokenService,
+                               TimeProvider timeProvider,
+                               com.digitalwill.notification.service.NotificationDeliveryService notificationDeliveryService) {
+        this.trustedContactRepository = Objects.requireNonNull(trustedContactRepository);
+        this.willContactRepository = Objects.requireNonNull(willContactRepository);
+        this.verificationRequestRepository = Objects.requireNonNull(verificationRequestRepository);
+        this.confirmationRepository = Objects.requireNonNull(confirmationRepository);
+        this.willStateRepository = Objects.requireNonNull(willStateRepository);
+        this.willStateService = Objects.requireNonNull(willStateService);
+        this.tokenService = Objects.requireNonNull(tokenService);
+        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this.notificationDeliveryService = notificationDeliveryService;
+    }
 
     public VerificationService(TrustedContactRepository trustedContactRepository,
                                WillContactRepository willContactRepository,
@@ -56,14 +78,8 @@ public class VerificationService {
                                WillStateService willStateService,
                                VerificationTokenService tokenService,
                                TimeProvider timeProvider) {
-        this.trustedContactRepository = Objects.requireNonNull(trustedContactRepository);
-        this.willContactRepository = Objects.requireNonNull(willContactRepository);
-        this.verificationRequestRepository = Objects.requireNonNull(verificationRequestRepository);
-        this.confirmationRepository = Objects.requireNonNull(confirmationRepository);
-        this.willStateRepository = Objects.requireNonNull(willStateRepository);
-        this.willStateService = Objects.requireNonNull(willStateService);
-        this.tokenService = Objects.requireNonNull(tokenService);
-        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this(trustedContactRepository, willContactRepository, verificationRequestRepository,
+             confirmationRepository, willStateRepository, willStateService, tokenService, timeProvider, null);
     }
 
     // ---- Trusted Contact management ----
@@ -187,6 +203,13 @@ public class VerificationService {
         verificationRequestRepository.save(req);
         log.info("Created verification request [{}] for will [{}] contact [{}] cycle [{}] expiresAt [{}]",
                 req.getId(), willId, contactId, cycle, expiresAt);
+
+        if (notificationDeliveryService != null) {
+            trustedContactRepository.findById(contactId).ifPresent(contact -> {
+                notificationDeliveryService.sendVerificationNotification(contact.getEmail(), contact.getName(), willId, rawToken);
+            });
+        }
+
         return rawToken;
     }
 
