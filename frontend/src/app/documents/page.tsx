@@ -1,95 +1,99 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api, getAuthToken } from '@/lib/api';
 import { DocumentResponse, UIState, WillResponse } from '@/lib/types';
 import { formatBytes, formatDate, mapErrorToUIState } from '@/lib/utils';
-import { Lock, Upload, Download, CheckCircle2, AlertCircle, FileText, Shield, RotateCcw, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Download, FileCheck2, FileText, Files, Fingerprint, LockKeyhole, RefreshCw, Search, ShieldCheck, UploadCloud } from 'lucide-react';
 
 export default function DocumentsPage() {
   const [will, setWill] = useState<WillResponse | null>(null);
-  const [willId, setWillId] = useState('');
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
   const [uiState, setUiState] = useState<UIState>('idle');
-  const [uploadState, setUploadState] = useState<UIState>('idle');
+  const [uploading, setUploading] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
-  const loadDocuments = useCallback(async (id: string) => {
-    if (!id.trim()) return;
+  const loadDocuments = useCallback(async (willId: string) => {
     setUiState('loading');
     setErrorMessage(null);
     try {
-      const docs = await api.listDocuments(id.trim());
-      setDocuments(docs);
+      const items = await api.listDocuments(willId);
+      setDocuments(items);
       setUiState('success');
-    } catch (err: unknown) {
-      const { state, message } = mapErrorToUIState(err);
+    } catch (error: unknown) {
+      const { state, message } = mapErrorToUIState(error);
       setUiState(state);
       setErrorMessage(message);
     }
   }, []);
 
   const loadInitial = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) {
+    setErrorMessage(null);
+    if (!getAuthToken()) {
       setUiState('unauthorized');
       return;
     }
-
+    setUiState('loading');
     try {
       const myWill = await api.getMyWill();
-      if (myWill) {
-        setWill(myWill);
-        setWillId(myWill.id);
-        await loadDocuments(myWill.id);
+      setWill(myWill);
+      if (!myWill) {
+        setDocuments([]);
+        setUiState('not_found');
+        return;
       }
-    } catch (err: unknown) {
-      const { state, message } = mapErrorToUIState(err);
+      await loadDocuments(myWill.id);
+    } catch (error: unknown) {
+      const { state, message } = mapErrorToUIState(error);
       setUiState(state);
       setErrorMessage(message);
     }
   }, [loadDocuments]);
 
-  useEffect(() => {
-    loadInitial();
-  }, [loadInitial]);
+  useEffect(() => { void loadInitial(); }, [loadInitial]);
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!willId.trim() || !selectedFile) {
-      setUploadState('validation_error');
-      setErrorMessage('Please provide a Will ID and select a file to upload.');
-      return;
-    }
+  const visibleDocuments = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return documents;
+    return documents.filter((document) => document.fileName.toLowerCase().includes(term) || document.contentType.toLowerCase().includes(term));
+  }, [documents, search]);
 
-    setUploadState('loading');
+  const handleUpload = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!will || !selectedFile || uploading) return;
+    setUploading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      await api.uploadDocument(willId.trim(), selectedFile);
-      setUploadState('success');
+      await api.uploadDocument(will.id, selectedFile);
       setSelectedFile(null);
-      setSuccessMessage('Document uploaded and envelope-encrypted (AES-256-GCM).');
-      await loadDocuments(willId.trim());
-    } catch (err: unknown) {
-      const { state, message } = mapErrorToUIState(err);
-      setUploadState(state);
+      const input = document.getElementById('document-file') as HTMLInputElement | null;
+      if (input) input.value = '';
+      setSuccessMessage('Document uploaded. The server has processed it through the configured encrypted-storage workflow.');
+      await loadDocuments(will.id);
+    } catch (error: unknown) {
+      const { message } = mapErrorToUIState(error);
       setErrorMessage(message);
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleDownload = async (doc: DocumentResponse) => {
-    setDownloadingId(doc.id);
+  const handleDownload = async (item: DocumentResponse) => {
+    if (!will || downloadingId) return;
+    setDownloadingId(item.id);
     setErrorMessage(null);
+    setSuccessMessage(null);
     try {
-      await api.downloadDocument(doc.id, willId || doc.willId, doc.fileName);
-    } catch (err: unknown) {
-      const { message } = mapErrorToUIState(err);
+      await api.downloadDocument(item.id, will.id, item.fileName);
+      setSuccessMessage(`Download started for “${item.fileName}”.`);
+    } catch (error: unknown) {
+      const { message } = mapErrorToUIState(error);
       setErrorMessage(message);
     } finally {
       setDownloadingId(null);
@@ -97,207 +101,63 @@ export default function DocumentsPage() {
   };
 
   if (uiState === 'unauthorized') {
-    return (
-      <div className="max-w-md mx-auto py-16 text-center space-y-6">
-        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-blue-400">
-          <Lock className="w-7 h-7" />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-xl font-bold text-zinc-100">Authentication Required</h2>
-          <p className="text-sm text-zinc-400">
-            Encrypted documents require authentication to verify owner authorization.
-          </p>
-        </div>
-        <Link
-          href="/auth"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
-        >
-          <span>Sign In or Register</span>
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-      </div>
-    );
+    return <div className="mx-auto max-w-xl py-12"><div className="surface p-8 text-center sm:p-10"><span className="icon-tile mx-auto"><LockKeyhole className="h-5 w-5" /></span><h1 className="mt-5 text-2xl font-extrabold text-[#18392d]">Sign in to manage documents</h1><p className="mt-2 text-sm leading-6 text-slate-500">Document access requires an authenticated owner session.</p><Link href="/auth" className="primary-button mt-6">Sign in or create account <ArrowRight className="h-4 w-4" /></Link></div></div>;
   }
 
-  if (uiState === 'forbidden') {
-    return (
-      <div className="max-w-md mx-auto py-16 text-center space-y-6">
-        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-red-400">
-          <Lock className="w-7 h-7" />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-xl font-bold text-zinc-100">Access Denied</h2>
-          <p className="text-sm text-zinc-400">
-            {errorMessage || 'You do not own this document vault.'}
-          </p>
-        </div>
-      </div>
-    );
+  if (uiState === 'not_found' || (!will && uiState === 'success')) {
+    return <div className="mx-auto max-w-xl py-12"><div className="surface p-8 text-center sm:p-10"><span className="icon-tile mx-auto"><Files className="h-5 w-5" /></span><h1 className="mt-5 text-2xl font-extrabold text-[#18392d]">Create your estate first</h1><p className="mt-2 text-sm leading-6 text-slate-500">Documents are attached to your Digital Will. Create an estate workspace, then return here to upload or retrieve files.</p><Link href="/estate" className="primary-button mt-6">Open estate workspace <ArrowRight className="h-4 w-4" /></Link></div></div>;
+  }
+
+  if (uiState === 'loading' && !will) {
+    return <div className="mx-auto max-w-xl py-20 text-center"><RefreshCw className="mx-auto h-6 w-6 animate-spin text-emerald-700" /><p className="mt-4 text-sm text-slate-500">Loading your secure document workspace…</p></div>;
+  }
+
+  if (!will && (uiState === 'server_error' || uiState === 'network_error')) {
+    return <div className="mx-auto max-w-xl py-12"><div className="surface p-8 text-center sm:p-10"><span className="icon-tile mx-auto"><AlertCircle className="h-5 w-5" /></span><h1 className="mt-5 text-2xl font-extrabold text-[#18392d]">Could not reach your estate</h1><p className="mt-2 text-sm leading-6 text-slate-500">{errorMessage || 'The document workspace could not load from the backend.'}</p><button type="button" onClick={() => void loadInitial()} className="primary-button mt-6"><RefreshCw className="h-4 w-4" /> Retry connection</button></div></div>;
   }
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-          <Lock className="w-6 h-6 text-blue-400" />
-          Encrypted Document Vault
-        </h1>
-        <p className="text-sm text-zinc-400 mt-1">
-          Store supporting deeds, certificates, and instructions. Files are envelope-encrypted with AES-256-GCM before persistent storage.
-        </p>
-      </div>
+      <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+        <div className="space-y-3"><span className="eyebrow"><LockKeyhole className="h-3.5 w-3.5" /> Document vault</span><h1 className="page-title">Your important files,<br className="hidden sm:block" /> in one protected place.</h1><p className="body-copy max-w-2xl text-sm sm:text-base">Upload documents for your estate and retrieve them when needed. The frontend sends files to your existing backend; encryption and authorization remain server-controlled.</p></div>
+        {will && <div className="surface flex items-center gap-3 px-4 py-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-800"><FileCheck2 className="h-5 w-5" /></span><div><p className="text-xs font-bold text-slate-500">Current estate</p><p className="mt-0.5 max-w-56 truncate text-sm font-extrabold text-slate-800">{will.title}</p></div></div>}
+      </section>
 
-      {/* Security Info Card */}
-      <div className="p-4 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300 text-xs flex items-center gap-3">
-        <Shield className="w-5 h-5 text-blue-400 shrink-0" />
-        <div>
-          <span className="font-semibold text-blue-200">Envelope Encryption Model</span>
-          <p className="text-blue-300/80 mt-0.5">
-            Every document is encrypted with a unique 256-bit AES Data Encryption Key (DEK) wrapped under the platform Master Key.
-            Plaintext is never written to disk or database. SHA-256 integrity checksums are verified on retrieval.
-          </p>
-        </div>
-      </div>
+      {errorMessage && <div className="status-message status-error flex items-start gap-2.5" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{errorMessage}</span><button type="button" onClick={() => setErrorMessage(null)} className="ml-auto text-xs font-bold">Dismiss</button></div>}
+      {successMessage && <div className="status-message status-success flex items-start gap-2.5" role="status"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{successMessage}</span><button type="button" onClick={() => setSuccessMessage(null)} className="ml-auto text-xs font-bold">Dismiss</button></div>}
 
-      {/* Messages */}
-      {errorMessage && (
-        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-      {successMessage && (
-        <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{successMessage}</span>
-        </div>
-      )}
-
-      {/* Upload and Will Selection Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Upload Form */}
-        <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-4">
-          <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-            <Upload className="w-4 h-4 text-zinc-400" />
-            Upload Envelope-Encrypted Document
-          </h2>
-          <form onSubmit={handleUpload} className="space-y-3">
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">Target Will ID</label>
-              <input
-                type="text"
-                value={willId}
-                onChange={(e) => setWillId(e.target.value)}
-                placeholder="Enter Will ID (UUID)..."
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">Select File</label>
-              <input
-                type="file"
-                onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
-                className="w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={uploadState === 'loading' || !selectedFile}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
-            >
-              {uploadState === 'loading' ? (
-                <>
-                  <RotateCcw className="w-4 h-4 animate-spin" />
-                  <span>Encrypting & Uploading...</span>
-                </>
-              ) : (
-                <span>Upload & Encrypt (AES-256-GCM)</span>
-              )}
-            </button>
+      <div className="grid gap-6 lg:grid-cols-[.85fr_1.15fr]">
+        <section className="surface p-5 sm:p-7">
+          <div className="flex items-start gap-3"><span className="icon-tile"><UploadCloud className="h-5 w-5" /></span><div><h2 className="text-lg font-extrabold text-slate-800">Add a document</h2><p className="mt-1 text-sm leading-6 text-slate-500">Choose the file you want associated with this estate.</p></div></div>
+          <form onSubmit={handleUpload} className="mt-6 space-y-4">
+            <label htmlFor="document-file" className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#cfe1d5] bg-[#f8fbf9] px-5 py-7 text-center transition hover:border-emerald-400 hover:bg-emerald-50/50">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-emerald-800 shadow-sm"><UploadCloud className="h-5 w-5" /></span>
+              <span className="mt-4 max-w-full break-all text-sm font-extrabold text-slate-700">{selectedFile ? selectedFile.name : 'Choose a file to upload'}</span>
+              <span className="mt-1 text-xs text-slate-500">{selectedFile ? `${formatBytes(selectedFile.size)} · ${selectedFile.type || 'Unknown file type'}` : 'Select a file from your device'}</span>
+              <span className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700">Browse files</span>
+              <input id="document-file" type="file" className="sr-only" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+            </label>
+            <button type="submit" disabled={!selectedFile || uploading || !will} className="primary-button w-full disabled:opacity-50">{uploading ? <><RefreshCw className="h-4 w-4 animate-spin" /> Uploading…</> : <><LockKeyhole className="h-4 w-4" /> Upload document <ArrowRight className="h-4 w-4" /></>}</button>
           </form>
-        </div>
+          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4"><p className="flex items-center gap-2 text-xs font-extrabold text-slate-700"><ShieldCheck className="h-4 w-4 text-emerald-700" /> Server-controlled protection</p><p className="mt-1 text-xs leading-5 text-slate-500">Files are uploaded over the authenticated API. The backend owns encryption, ownership validation and download authorization.</p></div>
+        </section>
 
-        {/* Load Documents by Will ID */}
-        <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-4">
-          <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-zinc-400" />
-            Query Documents
-          </h2>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={willId}
-              onChange={(e) => setWillId(e.target.value)}
-              placeholder="Will ID..."
-              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600"
-            />
-            <button
-              onClick={() => loadDocuments(willId)}
-              disabled={uiState === 'loading'}
-              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium transition-colors"
-            >
-              {uiState === 'loading' ? 'Loading...' : 'Fetch'}
-            </button>
+        <section className="surface min-w-0 p-5 sm:p-7">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start"><div className="flex items-start gap-3"><span className="icon-tile"><Files className="h-5 w-5" /></span><div><h2 className="text-lg font-extrabold text-slate-800">Estate documents</h2><p className="mt-1 text-sm text-slate-500">Files currently returned for your estate.</p></div></div><button type="button" onClick={() => will && loadDocuments(will.id)} disabled={!will || uiState === 'loading'} className="secondary-button !min-h-10 !text-xs"><RefreshCw className={`h-3.5 w-3.5 ${uiState === 'loading' ? 'animate-spin' : ''}`} /> Refresh list</button></div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-[#f6faf7] p-4"><p className="text-xs font-semibold text-slate-500">Total documents</p><p className="mt-1 text-2xl font-extrabold tracking-tight text-slate-800">{documents.length}</p></div><div className="rounded-2xl bg-[#f6faf7] p-4"><p className="text-xs font-semibold text-slate-500">Stored file size</p><p className="mt-1 text-2xl font-extrabold tracking-tight text-slate-800">{formatBytes(documents.reduce((sum, item) => sum + item.fileSize, 0))}</p></div></div>
+
+          <div className="relative mt-5"><Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by file name or type…" className="field-control !pl-10" /></div>
+
+          <div className="mt-4 space-y-2">
+            {uiState === 'loading' && <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><RefreshCw className="h-4 w-4 animate-spin" /> Loading documents…</div>}
+            {uiState !== 'loading' && visibleDocuments.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-10 text-center"><span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-slate-50 text-slate-500"><FileText className="h-5 w-5" /></span><p className="mt-3 text-sm font-bold text-slate-700">{documents.length === 0 ? 'No documents yet' : 'No matching files'}</p><p className="mt-1 text-xs leading-5 text-slate-500">{documents.length === 0 ? 'Upload your first document using the panel on the left.' : 'Try a different search phrase.'}</p></div>}
+            {visibleDocuments.map((item) => <article key={item.id} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-4 transition hover:border-emerald-100 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-800"><FileText className="h-4 w-4" /></span><div className="min-w-0"><p className="break-words text-sm font-extrabold text-slate-800">{item.fileName}</p><p className="mt-1 text-xs text-slate-500">{formatBytes(item.fileSize)} <span className="px-1">·</span> {item.contentType}</p><p className="mt-1 truncate font-mono text-[10px] text-slate-400" title={item.checksumSha256}>SHA-256 · {item.checksumSha256}</p><p className="mt-1 text-[11px] text-slate-400">Added {formatDate(item.createdAt)}</p></div></div><button type="button" onClick={() => handleDownload(item)} disabled={downloadingId !== null} className="secondary-button shrink-0 !min-h-9 !text-xs"><Download className="h-3.5 w-3.5" /> {downloadingId === item.id ? 'Preparing…' : 'Download'}</button></article>)}
           </div>
-          <p className="text-xs text-zinc-500">
-            Fetch all document metadata associated with this will. Downloads are streamed and decrypted on-the-fly using the authorized session.
-          </p>
-        </div>
+        </section>
       </div>
 
-      {/* Documents Table */}
-      <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/30 space-y-4">
-        <h3 className="text-sm font-semibold text-zinc-200 flex items-center justify-between">
-          <span>Encrypted Documents ({documents.length})</span>
-        </h3>
-
-        {documents.length === 0 ? (
-          <p className="text-xs text-zinc-500 py-6 text-center">No documents loaded or available for this Will.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-zinc-400">
-              <thead className="border-b border-zinc-800 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
-                <tr>
-                  <th className="py-2.5">File Name</th>
-                  <th className="py-2.5">Size</th>
-                  <th className="py-2.5">Type</th>
-                  <th className="py-2.5">SHA-256 Checksum</th>
-                  <th className="py-2.5">Uploaded</th>
-                  <th className="py-2.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60">
-                {documents.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-zinc-900/60 transition-colors">
-                    <td className="py-3 font-semibold text-zinc-200 flex items-center gap-2">
-                      <Lock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                      <span>{doc.fileName}</span>
-                    </td>
-                    <td className="py-3">{formatBytes(doc.fileSize)}</td>
-                    <td className="py-3 font-mono text-[11px] text-zinc-500">{doc.contentType}</td>
-                    <td className="py-3 font-mono text-[10px] text-zinc-500 truncate max-w-[150px]" title={doc.checksumSha256}>
-                      {doc.checksumSha256}
-                    </td>
-                    <td className="py-3">{formatDate(doc.createdAt)}</td>
-                    <td className="py-3 text-right">
-                      <button
-                        onClick={() => handleDownload(doc)}
-                        disabled={downloadingId === doc.id}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition-colors disabled:opacity-50"
-                      >
-                        <Download className="w-3 h-3" />
-                        <span>{downloadingId === doc.id ? 'Decrypting...' : 'Download'}</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 sm:p-5"><Fingerprint className="mt-0.5 h-5 w-5 shrink-0 text-emerald-800" /><div><p className="text-sm font-extrabold text-emerald-950">Integrity and access</p><p className="mt-1 text-xs leading-5 text-emerald-900/75">The checksum shown above comes from document metadata returned by the backend. It is informational here; access checks and decryption are performed by the server.</p></div></div>
     </div>
   );
 }

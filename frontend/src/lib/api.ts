@@ -31,7 +31,9 @@ export class ApiException extends Error {
   }
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+// Prefer an explicitly configured public API origin. Without one, use same-origin /api
+// requests so Next.js can proxy through rewrites in development/deployment.
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
 const TOKEN_STORAGE_KEY = 'digital_will_auth_token';
 
 export function getAuthToken(): string | null {

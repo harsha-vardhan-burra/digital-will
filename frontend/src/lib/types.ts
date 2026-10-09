@@ -37,27 +37,26 @@ export interface User {
   email: string;
   fullName: string;
   createdAt: string;
+  willId: string | null;
 }
 
+// Mirrors AuthService.AuthResponse. The API does not nest a `user` object.
 export interface AuthResponse {
   token: string;
-  user: User;
+  userId: string;
+  email: string;
+  fullName: string;
+  willId: string | null;
 }
 
+// Mirrors EstateController.WillResponse exactly. Fields not returned by the API
+// must not be treated as authoritative frontend state.
 export interface WillResponse {
   id: string;
   ownerId: string;
   title: string;
   state: SuccessionState;
   lastVerifiedActivityAt: string;
-  warningSentAt?: string;
-  finalWarningSentAt?: string;
-  verificationStartedAt?: string;
-  verifiedAt?: string;
-  releaseAfter?: string;
-  executingAt?: string;
-  executedAt?: string;
-  verificationCycle?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,9 +75,9 @@ export interface Asset {
   willId: string;
   title: string;
   category: AssetCategory;
-  description: string;
-  encryptedAccessData?: string;
-  instructions?: string;
+  description: string | null;
+  encryptedAccessData: string | null;
+  instructions: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,7 +87,7 @@ export interface Beneficiary {
   willId: string;
   name: string;
   email: string;
-  relationship: string;
+  relationship: string | null;
   createdAt: string;
 }
 
@@ -97,8 +96,8 @@ export interface AssetAllocation {
   assetId: string;
   beneficiaryId: string;
   sharePercentage: number;
-  instructions?: string;
-  allocatedAt: string;
+  instructions: string | null;
+  createdAt: string;
 }
 
 export interface WillContactDetailed {
@@ -119,14 +118,15 @@ export interface AllocationReviewItem {
   beneficiaryId: string;
   beneficiaryName: string;
   sharePercentage: number;
-  instructions?: string;
+  instructions: string | null;
 }
 
 export interface WillReview {
   willId: string;
   title: string;
   state: SuccessionState;
-  ownerId: string;
+  createdAt: string;
+  lastVerifiedActivityAt: string;
   assetCount: number;
   beneficiaryCount: number;
   allocationCount: number;
@@ -137,18 +137,26 @@ export interface WillReview {
   allAssetsFullyAllocated: boolean;
   hasQuorumContacts: boolean;
   readyForActivation: boolean;
+  warnings: string[];
+  assets: Asset[];
+  beneficiaries: Beneficiary[];
   allocations: AllocationReviewItem[];
 }
 
+// Mirrors EstateController.AuditLogDto; audit fields are display-only and are
+// always sourced from the backend response.
 export interface AuditLogDto {
+  id: string;
   sequenceNumber: number;
   action: string;
   status: string;
+  actorType: string;
   resourceType: string;
-  resourceId?: string;
-  detailsJson: string;
+  resourceId: string | null;
   createdAt: string;
+  prevHash: string | null;
   entryHash: string;
+  detailsJson: string | null;
 }
 
 export interface DocumentResponse {
@@ -161,12 +169,12 @@ export interface DocumentResponse {
   createdAt: string;
 }
 
+// Mirrors audit.service.AuditVerificationResult exactly.
 export interface AuditVerificationResult {
   valid: boolean;
-  totalEntries: number;
-  lastSequenceNumber: number;
-  tipHash: string;
-  errorMessage?: string;
+  checkedEntries: number;
+  failureReason: string | null;
+  failedSequenceNumber: number | null;
 }
 
 export interface VerificationConfirmationResult {
@@ -181,7 +189,7 @@ export interface DisclosedAssetItem {
   title: string;
   category: string;
   sharePercentage: number;
-  instructions: string;
+  instructions: string | null;
 }
 
 export interface BeneficiaryDisclosurePackage {

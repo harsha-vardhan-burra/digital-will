@@ -3,24 +3,29 @@ import './globals.css';
 import { Navbar } from '@/components/Navbar';
 
 export const metadata: Metadata = {
-  title: 'Digital Will — Estate Succession & Controlled Disclosure',
-  description: 'Deterministic, envelope-encrypted digital estate management platform',
+  title: 'Digital Will | Secure Estate Planning',
+  description: 'Organise estate assets, trusted contacts and beneficiary instructions in one secure, auditable workspace.',
+  applicationName: 'Digital Will',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-zinc-950 text-zinc-100 antialiased min-h-screen flex flex-col">
+    <html lang="en">
+      <body className="min-h-screen flex flex-col antialiased">
         <Navbar />
-        <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+        <main className="app-main flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10">
           {children}
         </main>
-        <footer className="border-t border-zinc-800/80 py-6 text-center text-xs text-zinc-500">
-          Deterministic State Engine • AES-256-GCM Envelope Encryption • Tamper-Evident Hash-Chained Audit Trail • Digital Will Phase 3
+        <footer className="site-footer mt-auto px-4 py-6 text-center">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-center gap-2 text-xs text-slate-500 sm:flex-row sm:gap-3">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-600" /> Digital Will</span>
+            <span className="hidden sm:inline">·</span>
+            <span>Encrypted document storage</span>
+            <span className="hidden sm:inline">·</span>
+            <span>Owner-authorized estate actions</span>
+            <span className="hidden sm:inline">·</span>
+            <span>Auditable succession workflow</span>
+          </div>
         </footer>
       </body>
     </html>
