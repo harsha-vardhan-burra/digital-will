@@ -8,12 +8,13 @@ Digital Will enables individuals to document digital and physical assets, specif
 
 ## 1. What Digital Will Is (and Is Not)
 
-- **It IS:** A secure platform for managing, encrypting, and conditionally disclosing digital estate succession instructions, asset records, and supporting documents to designated beneficiaries.
+- **It IS:** A secure platform for documenting digital and physical assets, specifying beneficiaries, configuring trusted contacts, and conditionally releasing envelope-encrypted estate records and instructions to designated beneficiaries when predetermined inactivity and 2-of-3 trusted contact verification criteria are met.
 - **It is NOT:**
-  - A legal replacement for a jurisdictionally valid last will and testament.
-  - An automated banking or financial transaction transfer system.
-  - A password manager or credentials vault.
-  - A mechanism that confers legal transfer of title or real estate ownership.
+  - A legally valid will or testament under any jurisdiction.
+  - A legal instrument establishing heirship, probate validity, or inheritance rights.
+  - An automated banking, wire transfer, or financial transaction execution system.
+  - A mechanism that confers legal transfer of title, deed, or physical/financial property.
+  - A password manager, credentials vault, or service that controls or shuts down third-party accounts.
 
 ---
 
@@ -31,8 +32,8 @@ Digital Will is architected as a modular monolith:
 ### Frontend
 - **Framework:** Next.js 15 (App Router, React 19)
 - **Language:** TypeScript
-- **Styling & Components:** Tailwind CSS, Radix UI primitives, Lucide icons
-- **Form Handling & Validation:** React Hook Form, Zod
+- **Styling & Components:** Tailwind CSS, Lucide icons, clsx, tailwind-merge
+- **State & Data Fetching:** Native React hooks and fetch API with strict error boundaries
 
 ---
 
@@ -62,12 +63,19 @@ ACTIVE -> INACTIVITY_WARNING -> FINAL_WARNING -> VERIFICATION_PENDING -> VERIFIE
 ### 3.4 Tamper-Evident Hash-Chained Audit Logging
 - Every critical action (state changes, uploads, verification events, disclosures) is written to a per-will hash chain.
 - Entries are linked using SHA-256 hashes including the previous hash and entry metadata.
-- Built-in verification detects insertions, deletions, and modifications.
+- **Tamper-Evident, Not Immutable:** While database storage is subject to potential physical modification, any unauthorized alteration, row insertion, or row deletion breaks the cryptographic hash chain and is immediately flagged upon verification.
+- Concurrency serialization guarantees monotonic sequence numbers across concurrent worker commits.
 
-### 3.5 Protected Background Job Processing
-- Scheduled processing endpoints (`/internal/jobs/**`) are triggered externally (e.g. GitHub Actions).
+### 3.5 Protected Background Job Processing & Orchestration
+- Scheduled processing endpoints (`/internal/jobs/**`) trigger state machine evaluations, recovery, and release disbursements.
 - Endpoints are protected by a shared secret (`X-Internal-Job-Secret`) verified using constant-time comparison to prevent timing attacks.
+- External orchestration is automated via GitHub Actions (`.github/workflows/scheduled-jobs.yml`), which executes on a 15-minute schedule or on-demand dispatch with strict secret and environment validation.
 
+### 3.6 Transaction-Aware Notification Delivery
+- Notification delivery (`NotificationDeliveryService`) supports automated email dispatch for trusted-contact verification and beneficiary disclosure.
+- **Post-Commit Delivery:** Notifications are dispatched via `TransactionSynchronizationManager.afterCommit()` so emails are sent only when database state transitions successfully commit.
+- **Provider Decoupling:** Defaults to `DISABLED` for local development and testing (returning `SKIPPED_UNCONFIGURED` without failing the workflow). Supports `CONSOLE` for local debugging and `RESEND` for production email dispatch.
+- **PII & Token Privacy:** Logs mask email addresses (`u***@example.com`) and never print raw verification or disclosure tokens.
 
 ---
 
@@ -87,7 +95,7 @@ ACTIVE -> INACTIVITY_WARNING -> FINAL_WARNING -> VERIFICATION_PENDING -> VERIFIE
 - **Review & Readiness Checklist:** `GET /api/wills/{id}/review` evaluates readiness against 6 key operational criteria before succession enablement.
 
 ### 4.3 Five Core Integration Workflows
-The system is backed by a 199-test backend suite (199 of 199 tests passing, with 66 dedicated Phase 4 security tests):
+The system is backed by a 209-test backend suite (209 of 209 tests passing, with 66 dedicated Phase 4 security tests and 10 notification delivery tests):
 1. **Workflow 1: End-to-End Estate Setup & Review (`EstateWorkflowIntegrationTest`)**
    - User registration -> will creation -> asset and beneficiary configuration -> 100% allocation -> 3 trusted contacts -> document vault upload -> review checklist verification -> activity check-in -> audit log integrity check.
 2. **Workflow 2: Ownership Boundaries & Single Will Isolation (`WillOwnershipIntegrationTest`)**
@@ -144,12 +152,12 @@ Phase 4 subjected the platform to adversarial security verification against 26 a
 | **Documents** | `POST` | `/api/documents/upload` | Upload & envelope encrypt document | Bearer Token |
 | **Documents** | `GET` | `/api/documents/{id}/download` | Stream decrypt & download document | Bearer Token |
 | **Documents** | `GET` | `/api/documents/will/{willId}` | List encrypted documents for will | Bearer Token |
-| **Verification** | `POST` | `/api/verification/verify` | Submit 2-of-3 contact verification | Contact Token |
+| **Verification** | `POST` | `/api/verification/confirm` | Confirm 2-of-3 contact verification | Contact Token (`token` body) |
 | **Disclosure** | `GET` | `/api/disclosure/{token}` | Scoped estate disclosure package | Single-Use Token |
-| **Disclosure** | `GET` | `/api/disclosure/{token}/documents/{docId}` | Scoped decrypted document download | Single-Use Token |
-| **Jobs** | `POST` | `/internal/jobs/process-inactivity` | Process inactivity warnings & verification | Secret Header |
-| **Jobs** | `POST` | `/internal/jobs/recover-stalled-executions` | Recover expired release worker leases | Secret Header |
-| **Jobs** | `POST` | `/internal/jobs/process-releases` | Process and disburse release packages | Secret Header |
+| **Disclosure** | `GET` | `/api/disclosure/{token}/document/{docId}` | Scoped decrypted document download | Single-Use Token |
+| **Jobs** | `POST` | `/internal/jobs/process-inactivity` | Process inactivity warnings & verification | `X-Internal-Job-Secret` |
+| **Jobs** | `POST` | `/internal/jobs/recover-stalled-executions` | Recover expired release worker leases | `X-Internal-Job-Secret` |
+| **Jobs** | `POST` | `/internal/jobs/process-releases` | Process and disburse release packages | `X-Internal-Job-Secret` |
 
 ---
 
@@ -159,21 +167,29 @@ Phase 4 subjected the platform to adversarial security verification against 26 a
 - Java 21 JDK
 - Node.js 18+ and npm
 - Maven 3.9+ (or use the included `./mvnw` wrapper)
+- PostgreSQL 15+ (for live application startup; automated tests use in-memory H2)
 
 ### Environment Configuration
 Copy `.env.example` to configure the backend and frontend environments:
 ```bash
 cp .env.example .env
 ```
+Key configuration items:
+- `MASTER_ENCRYPTION_KEY`: Base64-encoded 256-bit key for document envelope encryption.
+- `INTERNAL_JOB_SECRET`: Secret header required for internal scheduled jobs (`X-Internal-Job-Secret`).
+- `NOTIFICATION_ENABLED`: Enable email dispatch (`true`/`false`, default `false`).
+- `NOTIFICATION_PROVIDER`: Notification provider (`DISABLED`, `CONSOLE`, or `RESEND`).
+- `RESEND_API_KEY`: API key if using Resend email provider.
 
 ### Running Backend Tests
+All 209 tests execute in-memory using H2 with Flyway PostgreSQL compatibility:
 ```bash
 cd backend
 ./mvnw clean test
 ```
-*Note: Tests execute in-memory with H2 and standard mock providers.*
 
 ### Running the Backend Server
+> **Note on Local Database Provisioning:** Live runtime execution requires a running PostgreSQL instance with configured credentials. PostgreSQL provisioning and credential management are handled separately by the Estate & Backend Engineer.
 ```bash
 cd backend
 ./mvnw spring-boot:run
