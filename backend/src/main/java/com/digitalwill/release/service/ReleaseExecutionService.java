@@ -62,6 +62,36 @@ public class ReleaseExecutionService {
     private final VerificationTokenService tokenService;
     private final AuditLogService auditLogService;
     private final TimeProvider timeProvider;
+    private final com.digitalwill.notification.service.NotificationDeliveryService notificationDeliveryService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ReleaseExecutionService(WillStateRepository willStateRepository,
+                                   WillStateService willStateService,
+                                   BeneficiaryRepository beneficiaryRepository,
+                                   AssetRepository assetRepository,
+                                   AssetAllocationRepository allocationRepository,
+                                   ReleaseExecutionRepository executionRepository,
+                                   ReleaseExecutionItemRepository executionItemRepository,
+                                   DisclosureTokenRepository disclosureTokenRepository,
+                                   DisclosedRecordRepository disclosedRecordRepository,
+                                   VerificationTokenService tokenService,
+                                   AuditLogService auditLogService,
+                                   TimeProvider timeProvider,
+                                   com.digitalwill.notification.service.NotificationDeliveryService notificationDeliveryService) {
+        this.willStateRepository = Objects.requireNonNull(willStateRepository);
+        this.willStateService = Objects.requireNonNull(willStateService);
+        this.beneficiaryRepository = Objects.requireNonNull(beneficiaryRepository);
+        this.assetRepository = Objects.requireNonNull(assetRepository);
+        this.allocationRepository = Objects.requireNonNull(allocationRepository);
+        this.executionRepository = Objects.requireNonNull(executionRepository);
+        this.executionItemRepository = Objects.requireNonNull(executionItemRepository);
+        this.disclosureTokenRepository = Objects.requireNonNull(disclosureTokenRepository);
+        this.disclosedRecordRepository = Objects.requireNonNull(disclosedRecordRepository);
+        this.tokenService = Objects.requireNonNull(tokenService);
+        this.auditLogService = Objects.requireNonNull(auditLogService);
+        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this.notificationDeliveryService = notificationDeliveryService;
+    }
 
     public ReleaseExecutionService(WillStateRepository willStateRepository,
                                    WillStateService willStateService,
@@ -75,18 +105,9 @@ public class ReleaseExecutionService {
                                    VerificationTokenService tokenService,
                                    AuditLogService auditLogService,
                                    TimeProvider timeProvider) {
-        this.willStateRepository = Objects.requireNonNull(willStateRepository);
-        this.willStateService = Objects.requireNonNull(willStateService);
-        this.beneficiaryRepository = Objects.requireNonNull(beneficiaryRepository);
-        this.assetRepository = Objects.requireNonNull(assetRepository);
-        this.allocationRepository = Objects.requireNonNull(allocationRepository);
-        this.executionRepository = Objects.requireNonNull(executionRepository);
-        this.executionItemRepository = Objects.requireNonNull(executionItemRepository);
-        this.disclosureTokenRepository = Objects.requireNonNull(disclosureTokenRepository);
-        this.disclosedRecordRepository = Objects.requireNonNull(disclosedRecordRepository);
-        this.tokenService = Objects.requireNonNull(tokenService);
-        this.auditLogService = Objects.requireNonNull(auditLogService);
-        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this(willStateRepository, willStateService, beneficiaryRepository, assetRepository,
+             allocationRepository, executionRepository, executionItemRepository, disclosureTokenRepository,
+             disclosedRecordRepository, tokenService, auditLogService, timeProvider, null);
     }
 
     public record ExecutionResult(
@@ -265,6 +286,10 @@ public class ReleaseExecutionService {
                 AuditResourceType.DISCLOSURE, record.getId().toString(),
                 "{\"beneficiaryId\":\"" + beneficiary.getId() + "\"}"
         );
+
+        if (notificationDeliveryService != null) {
+            notificationDeliveryService.sendDisclosureNotification(beneficiary.getEmail(), beneficiary.getName(), willId, rawToken);
+        }
     }
 
     /**
