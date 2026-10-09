@@ -1,0 +1,110 @@
+name: Scheduled Background Jobs Orchestration
+
+# Orchestrates periodic background jobs for Digital Will:
+# 1. process-inactivity: Checks owner activity thresholds, sends inactivity warnings, and initiates trusted contact verification.
+# 2. recover-stalled-executions: Detects crashed release workers (EXECUTING state exceeding lease timeout) and resets them to RELEASE_PENDING.
+# 3. process-releases: Evaluates eligible release packages and generates scoped beneficiary disclosures.
+#
+# NOTE: GitHub Actions scheduled workflows are triggered via best-effort queueing and may experience scheduling delays.
+# They are not intended as hard real-time schedulers. For sub-minute latency, use an internal cron or dedicated scheduler.
+
+on:
+  schedule:
+    # Run twice daily at 02:00 and 14:00 UTC
+    - cron: '0 2,14 * * *'
+  workflow_dispatch:
+    inputs:
+      job_to_run:
+        description: 'Specific job to trigger (or all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - process-inactivity
+          - recover-stalled-executions
+          - process-releases
+
+permissions:
+  contents: read
+
+jobs:
+  run-scheduled-jobs:
+    name: Execute Internal Jobs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Required Configuration
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL || secrets.APP_BASE_URL }}
+          JOB_SECRET: ${{ secrets.INTERNAL_JOB_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "::error::Required variable APP_BASE_URL (or secret APP_BASE_URL) is not configured in repository settings."
+            exit 1
+          fi
+          if [ -z "$JOB_SECRET" ]; then
+            echo "::error::Required secret INTERNAL_JOB_SECRET is not configured in repository secrets."
+            exit 1
+          fi
+          echo "Configuration validated successfully. Target host configured."
+
+      - name: Process Inactivity Warnings & Verifications
+        if: ${{ github.event.inputs.job_to_run == 'all' || github.event.inputs.job_to_run == 'process-inactivity' || github.event_name == 'schedule' }}
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL || secrets.APP_BASE_URL }}
+          JOB_SECRET: ${{ secrets.INTERNAL_JOB_SECRET }}
+        run: |
+          echo "Triggering process-inactivity endpoint..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 60 \
+            -X POST "${BASE_URL}/internal/jobs/process-inactivity" \
+            -H "X-Internal-Job-Secret: ${JOB_SECRET}" \
+            -H "Content-Type: application/json")
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "process-inactivity completed successfully (HTTP $HTTP_STATUS)."
+          else
+            echo "::error::process-inactivity failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
+
+      - name: Recover Stalled Release Executions
+        if: ${{ github.event.inputs.job_to_run == 'all' || github.event.inputs.job_to_run == 'recover-stalled-executions' || github.event_name == 'schedule' }}
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL || secrets.APP_BASE_URL }}
+          JOB_SECRET: ${{ secrets.INTERNAL_JOB_SECRET }}
+        run: |
+          echo "Triggering recover-stalled-executions endpoint..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 60 \
+            -X POST "${BASE_URL}/internal/jobs/recover-stalled-executions" \
+            -H "X-Internal-Job-Secret: ${JOB_SECRET}" \
+            -H "Content-Type: application/json")
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "recover-stalled-executions completed successfully (HTTP $HTTP_STATUS)."
+          else
+            echo "::error::recover-stalled-executions failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
+
+      - name: Process & Execute Pending Releases
+        if: ${{ github.event.inputs.job_to_run == 'all' || github.event.inputs.job_to_run == 'process-releases' || github.event_name == 'schedule' }}
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL || secrets.APP_BASE_URL }}
+          JOB_SECRET: ${{ secrets.INTERNAL_JOB_SECRET }}
+        run: |
+          echo "Triggering process-releases endpoint..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 60 \
+            -X POST "${BASE_URL}/internal/jobs/process-releases" \
+            -H "X-Internal-Job-Secret: ${JOB_SECRET}" \
+            -H "Content-Type: application/json")
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "process-releases completed successfully (HTTP $HTTP_STATUS)."
+          else
+            echo "::error::process-releases failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
