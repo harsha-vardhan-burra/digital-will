@@ -191,9 +191,11 @@ public class EstateController {
         if (principal == null) {
             throw new SecurityException("Authentication required");
         }
-        WillStateEntity will = willStateRepository.findByOwnerId(principal.getId()).stream().findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No Digital Will found for current user"));
-        return ResponseEntity.ok(WillResponse.fromEntity(will));
+        // A user with no will yet is a normal state, not a bad request: return 404 so the
+        // frontend can show the "Create Your Digital Will" screen.
+        return willStateRepository.findByOwnerId(principal.getId()).stream().findFirst()
+                .map(will -> ResponseEntity.ok(WillResponse.fromEntity(will)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{id}")

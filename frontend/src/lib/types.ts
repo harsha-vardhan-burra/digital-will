@@ -61,13 +61,15 @@ export interface WillResponse {
   updatedAt: string;
 }
 
+// Must match backend com.digitalwill.estate.model.AssetCategory exactly.
 export type AssetCategory =
-  | 'REAL_ESTATE'
   | 'BANK_ACCOUNT'
+  | 'REAL_ESTATE'
   | 'INVESTMENT'
+  | 'CRYPTO'
   | 'DIGITAL_ACCOUNT'
-  | 'INTELLECTUAL_PROPERTY'
-  | 'PHYSICAL_ASSET'
+  | 'VEHICLE'
+  | 'PERSONAL_PROPERTY'
   | 'OTHER';
 
 export interface Asset {

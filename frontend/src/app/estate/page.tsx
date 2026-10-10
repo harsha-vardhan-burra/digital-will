@@ -54,9 +54,10 @@ const ASSET_CATEGORIES: { label: string; value: AssetCategory }[] = [
   { label: 'Real Estate / Property', value: 'REAL_ESTATE' },
   { label: 'Bank Account', value: 'BANK_ACCOUNT' },
   { label: 'Investment Portfolio', value: 'INVESTMENT' },
+  { label: 'Cryptocurrency', value: 'CRYPTO' },
   { label: 'Digital Account / Credentials', value: 'DIGITAL_ACCOUNT' },
-  { label: 'Intellectual Property', value: 'INTELLECTUAL_PROPERTY' },
-  { label: 'Physical Asset', value: 'PHYSICAL_ASSET' },
+  { label: 'Vehicle', value: 'VEHICLE' },
+  { label: 'Personal Property', value: 'PERSONAL_PROPERTY' },
   { label: 'Other Asset', value: 'OTHER' },
 ];
 
