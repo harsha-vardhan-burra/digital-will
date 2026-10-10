@@ -173,7 +173,7 @@ export default function EstatePage() {
   };
 
   const handleCheckIn = async () => {
-    if (!will) return;
+    if (!will || !['ACTIVE', 'INACTIVITY_WARNING', 'FINAL_WARNING', 'VERIFICATION_PENDING', 'RELEASE_PENDING'].includes(will.state)) return;
     setActionLoading(true);
     setErrorMessage(null);
     try {
@@ -190,8 +190,8 @@ export default function EstatePage() {
   };
 
   const handleCancelSuccession = async () => {
-    if (!will) return;
-    if (!confirm('Are you sure you want to cancel the pending succession warning?')) return;
+    if (!will || !['INACTIVITY_WARNING', 'FINAL_WARNING', 'VERIFICATION_PENDING', 'RELEASE_PENDING'].includes(will.state)) return;
+    if (!confirm('Cancel the current succession workflow and return the estate to ACTIVE?')) return;
     setActionLoading(true);
     try {
       const updated = await api.cancelWill(will.id, 'Owner explicit cancellation');
@@ -494,7 +494,7 @@ export default function EstatePage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="estate-page space-y-8">
       {/* Messages */}
       {errorMessage && (
         <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center justify-between">
@@ -530,17 +530,19 @@ export default function EstatePage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleCheckIn}
-                disabled={actionLoading}
-                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                title="Records owner activity and resets inactivity clock"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Record Check-In</span>
-              </button>
+              {['ACTIVE', 'INACTIVITY_WARNING', 'FINAL_WARNING', 'VERIFICATION_PENDING', 'RELEASE_PENDING'].includes(will.state) && (
+                <button
+                  onClick={handleCheckIn}
+                  disabled={actionLoading}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  title="Records owner activity and resets eligible succession progress"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Record Check-In</span>
+                </button>
+              )}
 
-              {(will.state === 'INACTIVITY_WARNING' || will.state === 'FINAL_WARNING' || will.state === 'VERIFICATION_PENDING') && (
+              {(['INACTIVITY_WARNING', 'FINAL_WARNING', 'VERIFICATION_PENDING', 'RELEASE_PENDING'].includes(will.state)) && (
                 <button
                   onClick={handleCancelSuccession}
                   disabled={actionLoading}
@@ -564,8 +566,8 @@ export default function EstatePage() {
               <p className="text-zinc-200 font-medium">{formatDate(will.createdAt)}</p>
             </div>
             <div>
-              <span className="text-zinc-500">Verification Cycle</span>
-              <p className="text-zinc-200 font-medium">Cycle #{will.verificationCycle ?? 0}</p>
+              <span className="text-zinc-500">Verification</span>
+              <p className="text-zinc-200 font-medium">Backend controlled</p>
             </div>
             <div>
               <span className="text-zinc-500">Quorum Requirement</span>
@@ -738,6 +740,17 @@ export default function EstatePage() {
                 )}
               </div>
             </div>
+
+            {review.warnings?.length > 0 && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                  <AlertTriangle className="h-4 w-4" /> What needs attention
+                </h3>
+                <ul className="mt-2 space-y-1 pl-5 text-sm text-amber-900/80 list-disc">
+                  {review.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+                </ul>
+              </div>
+            )}
 
             <div className={`p-4 rounded-lg border text-xs flex items-center justify-between ${
               review.readyForActivation
@@ -1188,11 +1201,11 @@ export default function EstatePage() {
                       </span>
                       {c.confirmedCurrentCycle && (
                         <span className="px-2 py-0.5 rounded text-[10px] bg-blue-950 text-blue-400 border border-blue-500/30">
-                          Confirmed Cycle #{will?.verificationCycle}
+                          Confirmed this cycle
                         </span>
                       )}
                     </div>
-                    <span className="text-zinc-500 text-[10px]">Added: {formatDate(c.addedAt)}</span>
+                    <span className="text-zinc-500 text-[10px]">Added: {formatDate(c.addedAt)}{c.confirmedCurrentCycle ? ' · Confirmed in current cycle' : ''}</span>
                   </div>
 
                   {c.isActive && (
@@ -1242,7 +1255,7 @@ export default function EstatePage() {
                   {auditVerify.valid ? 'Cryptographic Hash-Chain Verification Passed' : 'Verification Failed'}
                 </p>
                 <p className="text-zinc-400 text-[11px]">
-                  Total Entries: {auditVerify.totalEntries} • Tip Hash: <span className="font-mono text-zinc-300">{auditVerify.tipHash.substring(0, 16)}...</span>
+                  Entries checked: {auditVerify.checkedEntries}{!auditVerify.valid && auditVerify.failureReason ? ` · ${auditVerify.failureReason}` : ''}{auditVerify.failedSequenceNumber !== null ? ` · Failed sequence #${auditVerify.failedSequenceNumber}` : ''}
                 </p>
               </div>
             </div>
