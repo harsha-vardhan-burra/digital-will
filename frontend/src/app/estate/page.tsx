@@ -51,12 +51,13 @@ const STATE_ORDER: SuccessionState[] = [
 ];
 
 const ASSET_CATEGORIES: { label: string; value: AssetCategory }[] = [
+  { label: 'Bank / Cash Account', value: 'BANK_ACCOUNT' },
   { label: 'Real Estate / Property', value: 'REAL_ESTATE' },
-  { label: 'Bank Account', value: 'BANK_ACCOUNT' },
-  { label: 'Investment Portfolio', value: 'INVESTMENT' },
-  { label: 'Digital Account / Credentials', value: 'DIGITAL_ACCOUNT' },
-  { label: 'Intellectual Property', value: 'INTELLECTUAL_PROPERTY' },
-  { label: 'Physical Asset', value: 'PHYSICAL_ASSET' },
+  { label: 'Investments / Brokerage', value: 'INVESTMENT' },
+  { label: 'Cryptocurrency / Web3 Account', value: 'CRYPTO' },
+  { label: 'Digital Account / Service', value: 'DIGITAL_ACCOUNT' },
+  { label: 'Vehicle', value: 'VEHICLE' },
+  { label: 'Physical Valuables / Personal Property', value: 'PERSONAL_PROPERTY' },
   { label: 'Other Asset', value: 'OTHER' },
 ];
 
@@ -82,11 +83,34 @@ export default function EstatePage() {
   const [newWillTitle, setNewWillTitle] = useState('');
 
   const [showAddAsset, setShowAddAsset] = useState(false);
-  const [newAsset, setNewAsset] = useState<{ title: string; category: AssetCategory; description: string; instructions: string }>({
+  const [newAsset, setNewAsset] = useState<{
+    title: string;
+    category: AssetCategory;
+    description: string;
+    instructions: string;
+    institutionProvider: string;
+    accountType: string;
+    currency: string;
+    assetValue: string;
+    valuationDate: string;
+    ownershipPercentage: string;
+    assetYear: string;
+    assetUrl: string;
+    rawIdentifier: string;
+  }>({
     title: '',
-    category: 'REAL_ESTATE',
+    category: 'BANK_ACCOUNT',
     description: '',
     instructions: '',
+    institutionProvider: '',
+    accountType: '',
+    currency: 'USD',
+    assetValue: '',
+    valuationDate: '',
+    ownershipPercentage: '100',
+    assetYear: '',
+    assetUrl: '',
+    rawIdentifier: '',
   });
 
   const [showAddBeneficiary, setShowAddBeneficiary] = useState(false);
@@ -208,13 +232,50 @@ export default function EstatePage() {
 
   const handleAddAsset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!will || !newAsset.title.trim()) return;
+    if (!will) {
+      setErrorMessage('No active estate found. Please create or load your Digital Will first.');
+      return;
+    }
+    const trimmedTitle = newAsset.title.trim();
+    if (!trimmedTitle) {
+      setErrorMessage('Asset title is required.');
+      return;
+    }
     setActionLoading(true);
     setErrorMessage(null);
+    setSuccessMessage(null);
     try {
-      await api.addAsset(will.id, newAsset);
+      await api.addAsset(will.id, {
+        title: trimmedTitle,
+        category: newAsset.category,
+        description: newAsset.description.trim() || undefined,
+        instructions: newAsset.instructions.trim() || undefined,
+        institutionProvider: newAsset.institutionProvider.trim() || undefined,
+        accountType: newAsset.accountType.trim() || undefined,
+        currency: newAsset.currency.trim().toUpperCase() || undefined,
+        assetValue: newAsset.assetValue ? parseFloat(newAsset.assetValue) : undefined,
+        valuationDate: newAsset.valuationDate || undefined,
+        ownershipPercentage: newAsset.ownershipPercentage ? parseFloat(newAsset.ownershipPercentage) : undefined,
+        assetYear: newAsset.assetYear ? parseInt(newAsset.assetYear, 10) : undefined,
+        assetUrl: newAsset.assetUrl.trim() || undefined,
+        encryptedAccessData: newAsset.rawIdentifier.trim() || undefined,
+      });
       setShowAddAsset(false);
-      setNewAsset({ title: '', category: 'REAL_ESTATE', description: '', instructions: '' });
+      setNewAsset({
+        title: '',
+        category: 'BANK_ACCOUNT',
+        description: '',
+        instructions: '',
+        institutionProvider: '',
+        accountType: '',
+        currency: 'USD',
+        assetValue: '',
+        valuationDate: '',
+        ownershipPercentage: '100',
+        assetYear: '',
+        assetUrl: '',
+        rawIdentifier: '',
+      });
       await loadWillData(will.id);
       setSuccessMessage('Asset added to estate.');
     } catch (err) {
@@ -449,7 +510,7 @@ export default function EstatePage() {
   }
 
   // If user has no will yet
-  if (uiState === 'not_found' || (!will && uiState === 'success')) {
+  if (uiState === 'not_found' || !will) {
     return (
       <div className="max-w-lg mx-auto py-16 space-y-6">
         <div className="text-center space-y-2">
@@ -776,6 +837,17 @@ export default function EstatePage() {
       {/* Tab 2: Assets */}
       {activeTab === 'assets' && (
         <div className="space-y-6">
+          {/* Security Notice Banner */}
+          <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-950/20 text-amber-300 text-xs flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-semibold text-amber-200">Security Notice: Credential Storage Prohibited</p>
+              <p className="text-amber-300/90 leading-relaxed">
+                Do not enter bank PINs, card CVVs, account passwords, private keys, seed or recovery phrases, session cookies, MFA codes, or API secrets. Digital Will is an estate directive and succession planning platform, not a password manager. Identifiers (account numbers, vehicle VINs) are masked automatically and stored safely.
+              </p>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-zinc-100">Estate Assets</h2>
             <button
@@ -788,21 +860,21 @@ export default function EstatePage() {
           </div>
 
           {showAddAsset && (
-            <form onSubmit={handleAddAsset} className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-4">
+            <form onSubmit={handleAddAsset} className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-300">Asset Title</label>
+                  <label className="text-xs font-medium text-zinc-300">Asset Title *</label>
                   <input
                     type="text"
                     value={newAsset.title}
                     onChange={(e) => setNewAsset({ ...newAsset, title: e.target.value })}
-                    placeholder="Downtown Apartment"
+                    placeholder="e.g. Chase Premier Checking"
                     className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
                     required
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-300">Category</label>
+                  <label className="text-xs font-medium text-zinc-300">Category *</label>
                   <select
                     value={newAsset.category}
                     onChange={(e) => setNewAsset({ ...newAsset, category: e.target.value as AssetCategory })}
@@ -814,16 +886,128 @@ export default function EstatePage() {
                   </select>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Institution / Provider</label>
+                  <input
+                    type="text"
+                    value={newAsset.institutionProvider}
+                    onChange={(e) => setNewAsset({ ...newAsset, institutionProvider: e.target.value })}
+                    placeholder="e.g. JPMorgan Chase, Vanguard, Coinbase"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Account / Asset Type</label>
+                  <input
+                    type="text"
+                    value={newAsset.accountType}
+                    onChange={(e) => setNewAsset({ ...newAsset, accountType: e.target.value })}
+                    placeholder="e.g. Checking, Index Fund, Primary Residence"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Currency (ISO-4217)</label>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    value={newAsset.currency}
+                    onChange={(e) => setNewAsset({ ...newAsset, currency: e.target.value.toUpperCase() })}
+                    placeholder="USD"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500 font-mono uppercase"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Estimated Value</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={newAsset.assetValue}
+                    onChange={(e) => setNewAsset({ ...newAsset, assetValue: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Valuation Date</label>
+                  <input
+                    type="date"
+                    value={newAsset.valuationDate}
+                    onChange={(e) => setNewAsset({ ...newAsset, valuationDate: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Ownership Share (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="100"
+                    value={newAsset.ownershipPercentage}
+                    onChange={(e) => setNewAsset({ ...newAsset, ownershipPercentage: e.target.value })}
+                    placeholder="100"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Year / Manufacture</label>
+                  <input
+                    type="number"
+                    min="1800"
+                    max="2100"
+                    value={newAsset.assetYear}
+                    onChange={(e) => setNewAsset({ ...newAsset, assetYear: e.target.value })}
+                    placeholder="e.g. 2022"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-300">Online URL (https://)</label>
+                  <input
+                    type="url"
+                    value={newAsset.assetUrl}
+                    onChange={(e) => setNewAsset({ ...newAsset, assetUrl: e.target.value })}
+                    placeholder="https://chase.com"
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-300">Account / Serial Identifier</label>
+                <input
+                  type="text"
+                  value={newAsset.rawIdentifier}
+                  onChange={(e) => setNewAsset({ ...newAsset, rawIdentifier: e.target.value })}
+                  placeholder="e.g. Account number, VIN, domain name, or registry ref"
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500 font-mono"
+                />
+                <p className="text-[11px] text-zinc-500">
+                  Will be automatically masked (e.g. ****1234) in UI and audit logs. Do not enter passwords, PINs, or recovery phrases.
+                </p>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-xs font-medium text-zinc-300">Description</label>
                 <input
                   type="text"
                   value={newAsset.description}
                   onChange={(e) => setNewAsset({ ...newAsset, description: e.target.value })}
-                  placeholder="2-bedroom condo, deeds in safe"
+                  placeholder="Additional identifying details"
                   className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
                 />
               </div>
+
               <div className="space-y-1">
                 <label className="text-xs font-medium text-zinc-300">Succession Instructions</label>
                 <textarea
@@ -834,20 +1018,39 @@ export default function EstatePage() {
                   className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
                 />
               </div>
+
+              {errorMessage && (
+                <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                    <span>{errorMessage}</span>
+                  </div>
+                  <button type="button" onClick={() => setErrorMessage(null)} className="text-zinc-400 hover:text-zinc-200">✕</button>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
+                  disabled={actionLoading}
                   onClick={() => setShowAddAsset(false)}
-                  className="px-3 py-1.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs"
+                  className="px-3 py-1.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium"
+                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
                 >
-                  Save Asset
+                  {actionLoading ? (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Validating & Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Asset</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -860,22 +1063,59 @@ export default function EstatePage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {assets.map((a) => (
-                <div key={a.id} className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-2">
-                  <div className="flex items-start justify-between">
+                <div key={a.id} className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-semibold text-zinc-100">{a.title}</h3>
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                        {a.category}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                          {a.category}
+                        </span>
+                        {a.identifierMasked && (
+                          <span className="text-[10px] font-mono text-zinc-300 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-800">
+                            ID: {a.identifierMasked}
+                          </span>
+                        )}
+                        {a.assetYear && (
+                          <span className="text-[10px] text-zinc-400 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
+                            Year {a.assetYear}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => handleDeleteAsset(a.id)}
-                      className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                      disabled={actionLoading}
+                      className="p-1 text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-50"
                       title="Delete asset"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
+
+                  {(a.institutionProvider || a.accountType || a.assetValue !== null && a.assetValue !== undefined) && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      {a.assetValue !== null && a.assetValue !== undefined && (
+                        <span className="font-semibold text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/30">
+                          {a.currency ? `${a.currency} ` : '$'}
+                          {Number(a.assetValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {a.ownershipPercentage && a.ownershipPercentage < 100 ? ` (${a.ownershipPercentage}%)` : ''}
+                        </span>
+                      )}
+                      {(a.institutionProvider || a.accountType) && (
+                        <span className="text-zinc-400 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800">
+                          {a.institutionProvider} {a.accountType ? `• ${a.accountType}` : ''}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {a.assetUrl && (
+                    <p className="text-[11px] text-blue-400 truncate font-mono">
+                      {a.assetUrl}
+                    </p>
+                  )}
+
                   {a.description && <p className="text-xs text-zinc-400">{a.description}</p>}
                   {a.instructions && (
                     <p className="text-xs text-zinc-500 italic bg-zinc-950 p-2 rounded border border-zinc-900">
