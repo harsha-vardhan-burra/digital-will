@@ -108,7 +108,16 @@ public class EstateController {
             @NotNull(message = "Category must not be null") AssetCategory category,
             String description,
             String encryptedAccessData,
-            String instructions
+            String instructions,
+            String institutionProvider,
+            String accountType,
+            String currency,
+            java.math.BigDecimal assetValue,
+            java.time.LocalDate valuationDate,
+            java.math.BigDecimal ownershipPercentage,
+            Integer assetYear,
+            String assetUrl,
+            String rawIdentifier
     ) {}
 
     public record CreateBeneficiaryRequest(
@@ -175,6 +184,9 @@ public class EstateController {
             throw new SecurityException("Authentication required");
         }
         UUID owner = principal.getId();
+        if (request.ownerId() != null && !request.ownerId().equals(owner)) {
+            throw new SecurityException("Unauthorized: request ownerId does not match authenticated principal");
+        }
 
         // Enforce 1 Will per user MVP constraint
         List<WillStateEntity> existing = willStateRepository.findByOwnerId(owner);
@@ -191,9 +203,9 @@ public class EstateController {
         if (principal == null) {
             throw new SecurityException("Authentication required");
         }
-        WillStateEntity will = willStateRepository.findByOwnerId(principal.getId()).stream().findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No Digital Will found for current user"));
-        return ResponseEntity.ok(WillResponse.fromEntity(will));
+        return willStateRepository.findByOwnerId(principal.getId()).stream().findFirst()
+                .map(will -> ResponseEntity.ok(WillResponse.fromEntity(will)))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
 
     @GetMapping("/{id}")
@@ -266,7 +278,16 @@ public class EstateController {
                 request.category(),
                 request.description(),
                 request.encryptedAccessData(),
-                request.instructions()
+                request.instructions(),
+                request.institutionProvider(),
+                request.accountType(),
+                request.currency(),
+                request.assetValue(),
+                request.valuationDate(),
+                request.ownershipPercentage(),
+                request.assetYear(),
+                request.assetUrl(),
+                request.rawIdentifier()
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(asset);
     }

@@ -12,5 +12,6 @@ import java.util.UUID;
 public interface AssetRepository extends JpaRepository<Asset, UUID> {
     List<Asset> findByWillId(UUID willId);
     Optional<Asset> findByIdAndWillId(UUID id, UUID willId);
+    boolean existsByWillIdAndTitleIgnoreCaseAndCategory(UUID willId, String title, com.digitalwill.estate.model.AssetCategory category);
     long countByWillId(UUID willId);
 }

@@ -18,6 +18,7 @@ import com.digitalwill.state.repository.WillStateRepository;
 import com.digitalwill.verification.repository.WillContactRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,28 @@ public class EstateService {
     private final WillContactRepository willContactRepository;
     private final AuditLogService auditLogService;
     private final TimeProvider timeProvider;
+    private final com.digitalwill.estate.validation.AssetValidator assetValidator;
+
+    @Autowired
+    public EstateService(AssetRepository assetRepository,
+                         BeneficiaryRepository beneficiaryRepository,
+                         AssetAllocationRepository allocationRepository,
+                         WillStateRepository willStateRepository,
+                         EncryptedDocumentRepository documentRepository,
+                         WillContactRepository willContactRepository,
+                         AuditLogService auditLogService,
+                         TimeProvider timeProvider,
+                         com.digitalwill.estate.validation.AssetValidator assetValidator) {
+        this.assetRepository = Objects.requireNonNull(assetRepository);
+        this.beneficiaryRepository = Objects.requireNonNull(beneficiaryRepository);
+        this.allocationRepository = Objects.requireNonNull(allocationRepository);
+        this.willStateRepository = Objects.requireNonNull(willStateRepository);
+        this.documentRepository = Objects.requireNonNull(documentRepository);
+        this.willContactRepository = Objects.requireNonNull(willContactRepository);
+        this.auditLogService = Objects.requireNonNull(auditLogService);
+        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this.assetValidator = assetValidator != null ? assetValidator : new com.digitalwill.estate.validation.AssetValidator(assetRepository);
+    }
 
     public EstateService(AssetRepository assetRepository,
                          BeneficiaryRepository beneficiaryRepository,
@@ -46,14 +69,19 @@ public class EstateService {
                          WillContactRepository willContactRepository,
                          AuditLogService auditLogService,
                          TimeProvider timeProvider) {
-        this.assetRepository = Objects.requireNonNull(assetRepository);
-        this.beneficiaryRepository = Objects.requireNonNull(beneficiaryRepository);
-        this.allocationRepository = Objects.requireNonNull(allocationRepository);
-        this.willStateRepository = Objects.requireNonNull(willStateRepository);
-        this.documentRepository = Objects.requireNonNull(documentRepository);
-        this.willContactRepository = Objects.requireNonNull(willContactRepository);
-        this.auditLogService = Objects.requireNonNull(auditLogService);
-        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this(assetRepository, beneficiaryRepository, allocationRepository, willStateRepository,
+             documentRepository, willContactRepository, auditLogService, timeProvider, null);
+    }
+
+    private static String escapeJson(String input) {
+        if (input == null) return "";
+        return input.replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\b", "\\b")
+                    .replace("\f", "\\f")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
     }
 
     public record AllocationReviewItem(
@@ -90,13 +118,35 @@ public class EstateService {
 
     @Transactional
     public Asset addAsset(UUID willId, String title, AssetCategory category,
-                          String description, String encryptedAccessData, String instructions) {
+                          String description, String encryptedAccessData, String instructions,
+                          String institutionProvider, String accountType, String currency,
+                          java.math.BigDecimal assetValue, java.time.LocalDate valuationDate,
+                          java.math.BigDecimal ownershipPercentage, Integer assetYear,
+                          String assetUrl, String rawIdentifier) {
         WillStateEntity will = willStateRepository.findById(willId)
                 .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
 
+        com.digitalwill.estate.validation.AssetValidator.ValidatedAssetData validated =
+                assetValidator.validate(
+                        will, title, category, description, encryptedAccessData, instructions,
+                        institutionProvider, accountType, currency, assetValue, valuationDate,
+                        ownershipPercentage, assetYear, assetUrl, rawIdentifier
+                );
+
         Instant now = timeProvider.now();
         UUID assetId = UUID.randomUUID();
-        Asset asset = new Asset(assetId, willId, title, category, description, encryptedAccessData, instructions, now, now);
+        Asset asset = new Asset(assetId, willId, validated.title(), validated.category(),
+                validated.description(), validated.encryptedAccessData(), validated.instructions(), now, now);
+        asset.setInstitutionProvider(validated.institutionProvider());
+        asset.setAccountType(validated.accountType());
+        asset.setCurrency(validated.currency());
+        asset.setAssetValue(validated.assetValue());
+        asset.setValuationDate(validated.valuationDate());
+        asset.setOwnershipPercentage(validated.ownershipPercentage());
+        asset.setAssetYear(validated.assetYear());
+        asset.setAssetUrl(validated.assetUrl());
+        asset.setIdentifierMasked(validated.identifierMasked());
+
         Asset saved = assetRepository.save(asset);
 
         auditLogService.logCritical(
@@ -107,11 +157,18 @@ public class EstateService {
                 AuditStatus.SUCCESS,
                 AuditResourceType.WILL,
                 assetId.toString(),
-                "{\"action\":\"ADD_ASSET\",\"title\":\"" + title + "\",\"category\":\"" + category + "\"}"
+                "{\"action\":\"ADD_ASSET\",\"title\":\"" + escapeJson(validated.title()) + "\",\"category\":\"" + validated.category() + "\"}"
         );
 
-        log.info("Asset [{}] ({}) added to Will [{}]", assetId, title, willId);
+        log.info("Asset [{}] ({}) added to Will [{}]", assetId, validated.title(), willId);
         return saved;
+    }
+
+    @Transactional
+    public Asset addAsset(UUID willId, String title, AssetCategory category,
+                          String description, String encryptedAccessData, String instructions) {
+        return addAsset(willId, title, category, description, encryptedAccessData, instructions,
+                null, null, null, null, null, null, null, null, null);
     }
 
     public List<Asset> listAssets(UUID willId) {
@@ -120,6 +177,10 @@ public class EstateService {
 
     @Transactional
     public void deleteAsset(UUID willId, UUID assetId) {
+        WillStateEntity will = willStateRepository.findById(willId)
+                .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
+        assetValidator.verifyWillModifiable(will);
+
         Asset asset = assetRepository.findById(assetId)
                 .orElseThrow(() -> new IllegalArgumentException("Asset not found with ID: " + assetId));
         if (!asset.getWillId().equals(willId)) {
@@ -146,10 +207,41 @@ public class EstateService {
     public Beneficiary addBeneficiary(UUID willId, String name, String email, String relationship) {
         WillStateEntity will = willStateRepository.findById(willId)
                 .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
+        assetValidator.verifyWillModifiable(will);
+
+        if (name == null || name.isBlank()) {
+            throw new com.digitalwill.common.exception.ValidationException("REQUIRED_FIELD_MISSING", "Beneficiary name is required");
+        }
+        String cleanName = name.trim();
+        if (cleanName.length() > 255) {
+            throw new com.digitalwill.common.exception.ValidationException("INVALID_ARGUMENT", "Beneficiary name exceeds 255 characters");
+        }
+        com.digitalwill.common.validation.ProhibitedCredentialValidator.validateNoProhibitedCredentials("name", cleanName);
+
+        if (email == null || email.isBlank()) {
+            throw new com.digitalwill.common.exception.ValidationException("REQUIRED_FIELD_MISSING", "Beneficiary email is required");
+        }
+        String cleanEmail = email.trim().toLowerCase();
+        if (cleanEmail.length() > 255 || !cleanEmail.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+            throw new com.digitalwill.common.exception.ValidationException("INVALID_ARGUMENT", "Invalid beneficiary email format");
+        }
+
+        String cleanRelationship = null;
+        if (relationship != null && !relationship.isBlank()) {
+            cleanRelationship = relationship.trim();
+            if (cleanRelationship.length() > 100) {
+                throw new com.digitalwill.common.exception.ValidationException("INVALID_ARGUMENT", "Relationship exceeds 100 characters");
+            }
+            com.digitalwill.common.validation.ProhibitedCredentialValidator.validateNoProhibitedCredentials("relationship", cleanRelationship);
+        }
+
+        if (beneficiaryRepository.existsByWillIdAndEmailIgnoreCase(willId, cleanEmail)) {
+            throw new com.digitalwill.common.exception.DuplicateResourceException("A beneficiary with email '" + cleanEmail + "' already exists in this estate");
+        }
 
         Instant now = timeProvider.now();
         UUID beneficiaryId = UUID.randomUUID();
-        Beneficiary beneficiary = new Beneficiary(beneficiaryId, willId, name, email, relationship, now);
+        Beneficiary beneficiary = new Beneficiary(beneficiaryId, willId, cleanName, cleanEmail, cleanRelationship, now);
         Beneficiary saved = beneficiaryRepository.save(beneficiary);
 
         auditLogService.logCritical(
@@ -160,10 +252,10 @@ public class EstateService {
                 AuditStatus.SUCCESS,
                 AuditResourceType.WILL,
                 beneficiaryId.toString(),
-                "{\"action\":\"ADD_BENEFICIARY\",\"name\":\"" + name + "\"}"
+                "{\"action\":\"ADD_BENEFICIARY\",\"name\":\"" + escapeJson(cleanName) + "\"}"
         );
 
-        log.info("Beneficiary [{}] ({}) added to Will [{}]", beneficiaryId, name, willId);
+        log.info("Beneficiary [{}] ({}) added to Will [{}]", beneficiaryId, cleanName, willId);
         return saved;
     }
 
@@ -173,6 +265,10 @@ public class EstateService {
 
     @Transactional
     public void deleteBeneficiary(UUID willId, UUID beneficiaryId) {
+        WillStateEntity will = willStateRepository.findById(willId)
+                .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
+        assetValidator.verifyWillModifiable(will);
+
         Beneficiary beneficiary = beneficiaryRepository.findById(beneficiaryId)
                 .orElseThrow(() -> new IllegalArgumentException("Beneficiary not found with ID: " + beneficiaryId));
         if (!beneficiary.getWillId().equals(willId)) {
@@ -202,6 +298,11 @@ public class EstateService {
         if (willId != null && !asset.getWillId().equals(willId)) {
             throw new IllegalArgumentException("Asset does not belong to Will: " + willId);
         }
+        UUID targetWillId = willId != null ? willId : asset.getWillId();
+        WillStateEntity will = willStateRepository.findById(targetWillId)
+                .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + targetWillId));
+        assetValidator.verifyWillModifiable(will);
+
         Beneficiary beneficiary = beneficiaryRepository.findById(beneficiaryId)
                 .orElseThrow(() -> new IllegalArgumentException("Beneficiary not found with ID: " + beneficiaryId));
 
@@ -246,6 +347,10 @@ public class EstateService {
 
     @Transactional
     public void deleteAllocation(UUID willId, UUID allocationId) {
+        WillStateEntity will = willStateRepository.findById(willId)
+                .orElseThrow(() -> new IllegalArgumentException("Will not found with ID: " + willId));
+        assetValidator.verifyWillModifiable(will);
+
         AssetAllocation alloc = allocationRepository.findById(allocationId)
                 .orElseThrow(() -> new IllegalArgumentException("Allocation not found with ID: " + allocationId));
         Asset asset = assetRepository.findById(alloc.getAssetId())
