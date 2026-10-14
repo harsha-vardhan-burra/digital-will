@@ -67,10 +67,21 @@ class DocumentServiceIntegrationTest {
         willStateRepository.save(will);
     }
 
+    private byte[] createMinimalPdf() {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument();
+             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+            doc.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            doc.save(baos);
+            return baos.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Test
     @DisplayName("Upload encrypts document with envelope encryption and records audit log; download decrypts accurately")
     void uploadAndDownloadDocumentSuccess() {
-        byte[] originalContent = "Last Will & Testament Property Deed".getBytes(StandardCharsets.UTF_8);
+        byte[] originalContent = createMinimalPdf();
 
         EncryptedDocument uploaded = documentService.uploadDocument(
                 willId, ownerId, "deed.pdf", "application/pdf", originalContent
@@ -101,7 +112,7 @@ class DocumentServiceIntegrationTest {
     @Test
     @DisplayName("Tampered stored document fails decryption and generates security alert audit entry")
     void tamperedDocumentFailsDecryptionAndAlerts() {
-        byte[] originalContent = "Secret Asset Inventory".getBytes(StandardCharsets.UTF_8);
+        byte[] originalContent = createMinimalPdf();
 
         EncryptedDocument uploaded = documentService.uploadDocument(
                 willId, ownerId, "assets.pdf", "application/pdf", originalContent

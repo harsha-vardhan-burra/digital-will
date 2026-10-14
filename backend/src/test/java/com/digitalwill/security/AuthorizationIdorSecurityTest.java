@@ -60,6 +60,17 @@ public class AuthorizationIdorSecurityTest {
     private UUID beneficiaryAId;
     private UUID docAId;
 
+    private byte[] createMinimalPdf() {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument();
+             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+            doc.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            doc.save(baos);
+            return baos.toByteArray();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @BeforeEach
     void setUp() throws Exception {
         timeProvider.setNow(baseTime);
@@ -83,7 +94,7 @@ public class AuthorizationIdorSecurityTest {
 
         verificationService.addTrustedContactToWill(willAId, "Contact Alpha", "contact.alpha@example.com");
 
-        var docA = documentService.uploadDocument(willAId, userAId, "alpha_vault.pdf", "application/pdf", "Confidential Alpha".getBytes(StandardCharsets.UTF_8));
+        var docA = documentService.uploadDocument(willAId, userAId, "alpha_vault.pdf", "application/pdf", createMinimalPdf());
         docAId = docA.getId();
 
         // User B setup
