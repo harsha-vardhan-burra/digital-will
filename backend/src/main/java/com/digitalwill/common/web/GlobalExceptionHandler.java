@@ -271,6 +271,64 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(org.springframework.web.multipart.MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        log.warn("Uploaded file exceeds maximum allowed size at [{}]: {}", request.getRequestURI(), ex.getMessage());
+        ErrorResponse body = new ErrorResponse(
+                timeProvider.now(),
+                HttpStatus.PAYLOAD_TOO_LARGE.value(),
+                "FILE_TOO_LARGE",
+                "Uploaded file exceeds maximum permitted size",
+                request.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+    }
+
+    @ExceptionHandler(com.digitalwill.common.exception.ValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidationException(com.digitalwill.common.exception.ValidationException ex, HttpServletRequest request) {
+        log.warn("Validation failure [{}] at [{}]: {}", ex.getCode(), request.getRequestURI(), ex.getMessage());
+        ErrorResponse body = new ErrorResponse(
+                timeProvider.now(),
+                ex.getStatus().value(),
+                ex.getCode(),
+                ex.getMessage(),
+                request.getRequestURI()
+        );
+        return ResponseEntity.status(ex.getStatus()).body(body);
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(org.springframework.http.converter.HttpMessageNotReadableException ex, HttpServletRequest request) {
+        log.warn("Unreadable HTTP message at [{}]: {}", request.getRequestURI(), ex.getMessage());
+        String code = "INVALID_ARGUMENT";
+        String message = "Malformed JSON request payload";
+
+        Throwable cause = ex.getCause();
+        if (cause != null) {
+            String className = cause.getClass().getSimpleName();
+            String fullMessage = cause.getMessage() != null ? cause.getMessage() : "";
+            if (fullMessage.contains("AssetCategory")) {
+                code = "INVALID_CATEGORY";
+                message = "Invalid asset category specified. Supported categories: BANK_ACCOUNT, REAL_ESTATE, INVESTMENT, CRYPTO, DIGITAL_ACCOUNT, VEHICLE, PERSONAL_PROPERTY, OTHER";
+            } else if (className.contains("InvalidFormatException") || fullMessage.contains("Cannot deserialize value of type")) {
+                code = "INVALID_ARGUMENT";
+                message = "Invalid field value format in request payload";
+            } else if (className.contains("UnrecognizedPropertyException") || fullMessage.contains("Unrecognized field") || fullMessage.contains("UnrecognizedProperty")) {
+                code = "INVALID_ARGUMENT";
+                message = "Unrecognized field in request payload";
+            }
+        }
+
+        ErrorResponse body = new ErrorResponse(
+                timeProvider.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                code,
+                message,
+                request.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     // --- Client / Validation / Auth Exceptions ---
 
     @ExceptionHandler(IllegalArgumentException.class)
