@@ -94,6 +94,18 @@ class DisclosureWorkflowIntegrationTest {
     private UUID bobDocId;
     private String rawTokenAlice;
     private String rawTokenBob;
+    private byte[] aliceDocBytes;
+
+    private byte[] createMinimalPdf() {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument();
+             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+            doc.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            doc.save(baos);
+            return baos.toByteArray();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     @BeforeEach
     void setUp() {
@@ -104,11 +116,11 @@ class DisclosureWorkflowIntegrationTest {
         willId = will.getId();
 
         // Upload documents for Will
-        byte[] aliceDocBytes = "CONFIDENTIAL: Alice Title Deed".getBytes(StandardCharsets.UTF_8);
+        aliceDocBytes = createMinimalPdf();
         var aliceDoc = documentService.uploadDocument(willId, ownerId, "alice_deed.pdf", "application/pdf", aliceDocBytes);
         aliceDocId = aliceDoc.getId();
 
-        byte[] bobDocBytes = "CONFIDENTIAL: Bob Bank Statements".getBytes(StandardCharsets.UTF_8);
+        byte[] bobDocBytes = createMinimalPdf();
         var bobDoc = documentService.uploadDocument(willId, ownerId, "bob_bank.pdf", "application/pdf", bobDocBytes);
         bobDocId = bobDoc.getId();
 
@@ -173,7 +185,7 @@ class DisclosureWorkflowIntegrationTest {
     void aliceDownloadsHerScopedDocument() throws Exception {
         mockMvc.perform(get("/api/disclosure/" + rawTokenAlice + "/document/" + aliceDocId))
                 .andExpect(status().isOk())
-                .andExpect(content().string("CONFIDENTIAL: Alice Title Deed"));
+                .andExpect(content().bytes(aliceDocBytes));
     }
 
     @Test

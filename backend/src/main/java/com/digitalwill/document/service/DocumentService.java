@@ -12,10 +12,14 @@ import com.digitalwill.crypto.storage.DocumentStorageService;
 import com.digitalwill.document.exception.DocumentNotFoundException;
 import com.digitalwill.document.model.EncryptedDocument;
 import com.digitalwill.document.repository.EncryptedDocumentRepository;
+import com.digitalwill.common.exception.DocumentValidationException;
+import com.digitalwill.state.model.WillState;
 import com.digitalwill.state.model.WillStateEntity;
 import com.digitalwill.state.repository.WillStateRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +51,24 @@ public class DocumentService {
     private final AuditLogService auditLogService;
     private final WillStateRepository willStateRepository;
     private final TimeProvider timeProvider;
+    private final com.digitalwill.document.validation.DocumentValidationPipeline validationPipeline;
+
+    @Autowired
+    public DocumentService(EncryptedDocumentRepository documentRepository,
+                           EncryptionService encryptionService,
+                           DocumentStorageService storageService,
+                           AuditLogService auditLogService,
+                           WillStateRepository willStateRepository,
+                           TimeProvider timeProvider,
+                           com.digitalwill.document.validation.DocumentValidationPipeline validationPipeline) {
+        this.documentRepository = Objects.requireNonNull(documentRepository);
+        this.encryptionService = Objects.requireNonNull(encryptionService);
+        this.storageService = Objects.requireNonNull(storageService);
+        this.auditLogService = Objects.requireNonNull(auditLogService);
+        this.willStateRepository = Objects.requireNonNull(willStateRepository);
+        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this.validationPipeline = Objects.requireNonNull(validationPipeline);
+    }
 
     public DocumentService(EncryptedDocumentRepository documentRepository,
                            EncryptionService encryptionService,
@@ -54,16 +76,29 @@ public class DocumentService {
                            AuditLogService auditLogService,
                            WillStateRepository willStateRepository,
                            TimeProvider timeProvider) {
-        this.documentRepository = Objects.requireNonNull(documentRepository);
-        this.encryptionService = Objects.requireNonNull(encryptionService);
-        this.storageService = Objects.requireNonNull(storageService);
-        this.auditLogService = Objects.requireNonNull(auditLogService);
-        this.willStateRepository = Objects.requireNonNull(willStateRepository);
-        this.timeProvider = Objects.requireNonNull(timeProvider);
+        this(documentRepository, encryptionService, storageService, auditLogService,
+             willStateRepository, timeProvider,
+             new com.digitalwill.document.validation.DocumentValidationPipeline(
+                     new com.digitalwill.document.validation.MediaDetector(),
+                     new com.digitalwill.document.validation.SafeDocumentParser(),
+                     new com.digitalwill.document.validation.ClamAvMalwareScanner(false, "localhost", 3310, 5000, "OPTIONAL")
+             ));
+    }
+
+    private static String escapeJson(String input) {
+        if (input == null) return "";
+        return input.replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\b", "\\b")
+                    .replace("\f", "\\f")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
     }
 
     @Transactional
-    public EncryptedDocument uploadDocument(UUID willId, UUID ownerId, String fileName, String contentType, byte[] plaintext) {
+    public EncryptedDocument uploadDocument(UUID willId, UUID ownerId, String fileName, String contentType,
+                                           com.digitalwill.document.model.DocumentCategory category, byte[] plaintext) {
         Objects.requireNonNull(willId, "willId must not be null");
         Objects.requireNonNull(fileName, "fileName must not be null");
         Objects.requireNonNull(contentType, "contentType must not be null");
@@ -76,6 +111,17 @@ public class DocumentService {
             throw new SecurityException("Unauthorized: actor is not the owner of Will: " + willId);
         }
 
+        if (will.getState() == WillState.EXECUTING || will.getState() == WillState.EXECUTED) {
+            throw new DocumentValidationException(
+                    "INVALID_STATE",
+                    "Cannot upload documents: Digital Will is in terminal or executing state (" + will.getState() + ")",
+                    HttpStatus.CONFLICT
+            );
+        }
+
+        // Run authoritative Document Validation Pipeline (Stages A through E)
+        var pipelineResult = validationPipeline.validate(fileName, contentType, category, plaintext);
+
         UUID documentId = UUID.randomUUID();
         Instant now = timeProvider.now();
 
@@ -85,31 +131,48 @@ public class DocumentService {
         // 2. Perform envelope encryption (AES-256-GCM + wrapped DEK)
         EncryptedData encrypted = encryptionService.encrypt(plaintext);
 
-        // 3. Store ciphertext securely on storage backend
-        String storagePath = storageService.store(willId, documentId, encrypted.ciphertext());
+        // 3. Store ciphertext securely on storage backend (Stage F - Private Staging)
+        String storagePath = null;
+        EncryptedDocument saved;
+        try {
+            storagePath = storageService.store(willId, documentId, encrypted.ciphertext());
 
-        // 4. Save metadata entity
-        EncryptedDocument entity = new EncryptedDocument(
-                documentId,
-                willId,
-                fileName,
-                contentType,
-                plaintext.length,
-                checksum,
-                storagePath,
-                encrypted.encryptedDek(),
-                encrypted.iv(),
-                encrypted.algorithm(),
-                encrypted.keyWrapAlgorithm(),
-                encrypted.version(),
-                now,
-                ownerId
-        );
+            // 4. Save metadata entity
+            EncryptedDocument entity = new EncryptedDocument(
+                    documentId,
+                    willId,
+                    pipelineResult.sanitizedFileName(),
+                    pipelineResult.detectedContentType(),
+                    plaintext.length,
+                    checksum,
+                    storagePath,
+                    encrypted.encryptedDek(),
+                    encrypted.iv(),
+                    encrypted.algorithm(),
+                    encrypted.keyWrapAlgorithm(),
+                    encrypted.version(),
+                    now,
+                    ownerId,
+                    pipelineResult.status(),
+                    pipelineResult.statusCode(),
+                    pipelineResult.statusMessage(),
+                    pipelineResult.detectedContentType(),
+                    pipelineResult.category()
+            );
 
-        EncryptedDocument saved = documentRepository.save(entity);
+            saved = documentRepository.save(entity);
+        } catch (Exception e) {
+            if (storagePath != null) {
+                storageService.delete(storagePath);
+            }
+            throw e;
+        }
 
         // 5. Audit log upload event (audit-required)
-        String details = "{\"fileName\":\"" + fileName + "\",\"fileSize\":" + plaintext.length + ",\"checksum\":\"" + checksum + "\"}";
+        String details = "{\"fileName\":\"" + escapeJson(pipelineResult.sanitizedFileName()) +
+                "\",\"fileSize\":" + plaintext.length +
+                ",\"checksum\":\"" + checksum +
+                "\",\"status\":\"" + pipelineResult.status() + "\"}";
         auditLogService.logCritical(
                 willId,
                 ownerId != null ? ownerId.toString() : "UNKNOWN",
@@ -121,8 +184,13 @@ public class DocumentService {
                 details
         );
 
-        log.info("Document [{}] uploaded and envelope-encrypted for Will [{}]", documentId, willId);
+        log.info("Document [{}] uploaded, validated, and envelope-encrypted for Will [{}]", documentId, willId);
         return saved;
+    }
+
+    @Transactional
+    public EncryptedDocument uploadDocument(UUID willId, UUID ownerId, String fileName, String contentType, byte[] plaintext) {
+        return uploadDocument(willId, ownerId, fileName, contentType, com.digitalwill.document.model.DocumentCategory.GENERAL, plaintext);
     }
 
     @Transactional
@@ -132,6 +200,10 @@ public class DocumentService {
 
         EncryptedDocument doc = documentRepository.findByIdAndWillId(documentId, willId)
                 .orElseThrow(() -> new DocumentNotFoundException("Document not found with ID: " + documentId));
+
+        if (doc.getStatus() != com.digitalwill.document.model.DocumentStatus.ACCEPTED) {
+            throw new SecurityException("Document is not available for download (status: " + doc.getStatus() + ")");
+        }
 
         // 1. Retrieve ciphertext from storage
         byte[] ciphertext = storageService.retrieve(doc.getStoragePath());
@@ -186,7 +258,7 @@ public class DocumentService {
                 AuditStatus.SUCCESS,
                 AuditResourceType.DOCUMENT,
                 documentId.toString(),
-                "{\"fileName\":\"" + doc.getFileName() + "\"}"
+                "{\"fileName\":\"" + escapeJson(doc.getFileName()) + "\"}"
         );
 
         return plaintext;

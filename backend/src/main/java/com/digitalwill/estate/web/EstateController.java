@@ -1,5 +1,22 @@
 package com.digitalwill.estate.web;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.digitalwill.audit.model.AuditLogEntry;
 import com.digitalwill.audit.service.AuditLogService;
 import com.digitalwill.audit.service.AuditVerificationResult;
@@ -16,22 +33,13 @@ import com.digitalwill.state.model.WillStateEntity;
 import com.digitalwill.state.repository.WillStateRepository;
 import com.digitalwill.state.service.WillStateService;
 import com.digitalwill.verification.service.VerificationService;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/wills")
@@ -108,7 +116,16 @@ public class EstateController {
             @NotNull(message = "Category must not be null") AssetCategory category,
             String description,
             String encryptedAccessData,
-            String instructions
+            String instructions,
+            String institutionProvider,
+            String accountType,
+            String currency,
+            java.math.BigDecimal assetValue,
+            java.time.LocalDate valuationDate,
+            java.math.BigDecimal ownershipPercentage,
+            Integer assetYear,
+            String assetUrl,
+            String rawIdentifier
     ) {}
 
     public record CreateBeneficiaryRequest(
@@ -175,6 +192,9 @@ public class EstateController {
             throw new SecurityException("Authentication required");
         }
         UUID owner = principal.getId();
+        if (request.ownerId() != null && !request.ownerId().equals(owner)) {
+            throw new SecurityException("Unauthorized: request ownerId does not match authenticated principal");
+        }
 
         // Enforce 1 Will per user MVP constraint
         List<WillStateEntity> existing = willStateRepository.findByOwnerId(owner);
@@ -191,8 +211,8 @@ public class EstateController {
         if (principal == null) {
             throw new SecurityException("Authentication required");
         }
-        // A user with no will yet is a normal state, not a bad request: return 404 so the
-        // frontend can show the "Create Your Digital Will" screen.
+        // A user with no will yet is a normal state, not a bad
+        // request: return 404 so the frontend can show the "Create Your Digital Will" screen.
         return willStateRepository.findByOwnerId(principal.getId()).stream().findFirst()
                 .map(will -> ResponseEntity.ok(WillResponse.fromEntity(will)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -268,7 +288,16 @@ public class EstateController {
                 request.category(),
                 request.description(),
                 request.encryptedAccessData(),
-                request.instructions()
+                request.instructions(),
+                request.institutionProvider(),
+                request.accountType(),
+                request.currency(),
+                request.assetValue(),
+                request.valuationDate(),
+                request.ownershipPercentage(),
+                request.assetYear(),
+                request.assetUrl(),
+                request.rawIdentifier()
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(asset);
     }

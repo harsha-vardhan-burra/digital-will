@@ -7,6 +7,7 @@ import {
   AuthResponse,
   Beneficiary,
   DisclosureResponse,
+  DocumentCategory,
   DocumentResponse,
   User,
   VerificationConfirmationResult,
@@ -132,7 +133,10 @@ export const api = {
       if (res.status === 404) return null;
       return await handleResponse<WillResponse>(res);
     } catch (err) {
-      if (err instanceof ApiException && err.status === 404) {
+      if (
+        err instanceof ApiException &&
+        (err.status === 404 || err.status === 400 && (err.message?.includes('No Digital Will found') || err.code === 'INVALID_ARGUMENT'))
+      ) {
         return null;
       }
       throw err;
@@ -317,10 +321,13 @@ export const api = {
   },
 
   // --- Documents ---
-  async uploadDocument(willId: string, file: File): Promise<DocumentResponse> {
+  async uploadDocument(willId: string, file: File, category?: DocumentCategory): Promise<DocumentResponse> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('willId', willId);
+    if (category) {
+      formData.append('category', category);
+    }
 
     const token = getAuthToken();
     const headers: Record<string, string> = {};

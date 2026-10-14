@@ -59,12 +59,38 @@ public class EncryptedDocument {
     @Column(name = "created_by")
     private UUID createdBy;
 
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 50)
+    private DocumentStatus status = DocumentStatus.ACCEPTED;
+
+    @Column(name = "status_code", length = 100)
+    private String statusCode;
+
+    @Column(name = "status_message", length = 500)
+    private String statusMessage;
+
+    @Column(name = "detected_content_type", length = 100)
+    private String detectedContentType;
+
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "category", nullable = false, length = 50)
+    private DocumentCategory category = DocumentCategory.GENERAL;
+
     public EncryptedDocument() {
     }
 
     public EncryptedDocument(UUID id, UUID willId, String fileName, String contentType, long fileSize,
                              String checksumSha256, String storagePath, String encryptedDek, String iv,
                              String algorithm, String keyWrapAlgorithm, int version, Instant createdAt, UUID createdBy) {
+        this(id, willId, fileName, contentType, fileSize, checksumSha256, storagePath, encryptedDek, iv,
+             algorithm, keyWrapAlgorithm, version, createdAt, createdBy, DocumentStatus.ACCEPTED, null, null, contentType, DocumentCategory.GENERAL);
+    }
+
+    public EncryptedDocument(UUID id, UUID willId, String fileName, String contentType, long fileSize,
+                             String checksumSha256, String storagePath, String encryptedDek, String iv,
+                             String algorithm, String keyWrapAlgorithm, int version, Instant createdAt, UUID createdBy,
+                             DocumentStatus status, String statusCode, String statusMessage,
+                             String detectedContentType, DocumentCategory category) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.willId = Objects.requireNonNull(willId, "willId must not be null");
         this.fileName = Objects.requireNonNull(fileName, "fileName must not be null");
@@ -79,6 +105,11 @@ public class EncryptedDocument {
         this.version = version;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.createdBy = createdBy;
+        this.status = status != null ? status : DocumentStatus.ACCEPTED;
+        this.statusCode = statusCode;
+        this.statusMessage = statusMessage;
+        this.detectedContentType = detectedContentType != null ? detectedContentType : contentType;
+        this.category = category != null ? category : DocumentCategory.GENERAL;
     }
 
     public UUID getId() {
@@ -191,5 +222,45 @@ public class EncryptedDocument {
 
     public void setCreatedBy(UUID createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public DocumentStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(DocumentStatus status) {
+        this.status = status;
+    }
+
+    public String getStatusCode() {
+        return statusCode;
+    }
+
+    public void setStatusCode(String statusCode) {
+        this.statusCode = statusCode;
+    }
+
+    public String getStatusMessage() {
+        return statusMessage;
+    }
+
+    public void setStatusMessage(String statusMessage) {
+        this.statusMessage = statusMessage;
+    }
+
+    public String getDetectedContentType() {
+        return detectedContentType;
+    }
+
+    public void setDetectedContentType(String detectedContentType) {
+        this.detectedContentType = detectedContentType;
+    }
+
+    public DocumentCategory getCategory() {
+        return category;
+    }
+
+    public void setCategory(DocumentCategory category) {
+        this.category = category;
     }
 }

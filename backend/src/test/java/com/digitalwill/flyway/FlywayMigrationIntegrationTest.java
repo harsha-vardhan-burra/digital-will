@@ -29,18 +29,18 @@ class FlywayMigrationIntegrationTest {
     private DataSource dataSource;
 
     @Test
-    @DisplayName("Verify all Flyway migrations are applied successfully and version is V7")
+    @DisplayName("Verify all Flyway migrations are applied successfully and version is V8")
     void allFlywayMigrationsAppliedSuccessfully() {
         MigrationInfo[] applied = flyway.info().applied();
         assertThat(applied).isNotEmpty();
-        assertThat(applied.length).isEqualTo(7);
+        assertThat(applied.length).isEqualTo(8);
 
         for (MigrationInfo info : applied) {
             assertThat(info.getState().isApplied()).isTrue();
             assertThat(info.getState().isFailed()).isFalse();
         }
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
     }
 
     @Test

@@ -62,7 +62,12 @@ public class DocumentController {
             String contentType,
             long fileSize,
             String checksumSha256,
-            Instant createdAt
+            Instant createdAt,
+            com.digitalwill.document.model.DocumentStatus status,
+            String statusCode,
+            String statusMessage,
+            String detectedContentType,
+            com.digitalwill.document.model.DocumentCategory category
     ) {
         public static DocumentResponse fromEntity(EncryptedDocument doc) {
             return new DocumentResponse(
@@ -72,7 +77,12 @@ public class DocumentController {
                     doc.getContentType(),
                     doc.getFileSize(),
                     doc.getChecksumSha256(),
-                    doc.getCreatedAt()
+                    doc.getCreatedAt(),
+                    doc.getStatus(),
+                    doc.getStatusCode(),
+                    doc.getStatusMessage(),
+                    doc.getDetectedContentType(),
+                    doc.getCategory()
             );
         }
     }
@@ -81,6 +91,7 @@ public class DocumentController {
     public ResponseEntity<DocumentResponse> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam("willId") UUID willId,
+            @RequestParam(value = "category", required = false) com.digitalwill.document.model.DocumentCategory category,
             @AuthenticationPrincipal UserPrincipal principal
     ) throws IOException {
         if (principal == null) {
@@ -100,6 +111,7 @@ public class DocumentController {
                 effectiveOwnerId,
                 fileName,
                 contentType,
+                category != null ? category : com.digitalwill.document.model.DocumentCategory.GENERAL,
                 file.getBytes()
         );
 

@@ -95,7 +95,7 @@ ACTIVE -> INACTIVITY_WARNING -> FINAL_WARNING -> VERIFICATION_PENDING -> VERIFIE
 - **Review & Readiness Checklist:** `GET /api/wills/{id}/review` evaluates readiness against 6 key operational criteria before succession enablement.
 
 ### 4.3 Five Core Integration Workflows
-The system is backed by a 209-test backend suite (209 of 209 tests passing, with 66 dedicated Phase 4 security tests and 10 notification delivery tests):
+The system is backed by a 222-test backend suite (222 of 222 tests passing, with 66 dedicated Phase 4 security tests, 10 notification delivery tests, 6 Flyway/PostgreSQL integration tests, and 7 document upload & estate flow tests):
 1. **Workflow 1: End-to-End Estate Setup & Review (`EstateWorkflowIntegrationTest`)**
    - User registration -> will creation -> asset and beneficiary configuration -> 100% allocation -> 3 trusted contacts -> document vault upload -> review checklist verification -> activity check-in -> audit log integrity check.
 2. **Workflow 2: Ownership Boundaries & Single Will Isolation (`WillOwnershipIntegrationTest`)**
@@ -174,26 +174,51 @@ Copy `.env.example` to configure the backend and frontend environments:
 ```bash
 cp .env.example .env
 ```
-Key configuration items:
-- `MASTER_ENCRYPTION_KEY`: Base64-encoded 256-bit key for document envelope encryption.
-- `INTERNAL_JOB_SECRET`: Secret header required for internal scheduled jobs (`X-Internal-Job-Secret`).
-- `NOTIFICATION_ENABLED`: Enable email dispatch (`true`/`false`, default `false`).
-- `NOTIFICATION_PROVIDER`: Notification provider (`DISABLED`, `CONSOLE`, or `RESEND`).
-- `RESEND_API_KEY`: API key if using Resend email provider.
+Key configuration items (matching `application.properties` and `.env.example`):
+- `SPRING_DATASOURCE_URL` / `DB_URL`: JDBC URL (default: `jdbc:postgresql://localhost:5432/digitalwill`).
+- `SPRING_DATASOURCE_USERNAME` / `DB_USERNAME`: Database user (default: `postgres`).
+- `SPRING_DATASOURCE_PASSWORD` / `DB_PASSWORD`: Database password (default: `postgres`).
+- `APP_CRYPTO_MASTER_KEY`: Base64-encoded 256-bit key (32 bytes) for document envelope encryption.
+- `APP_JOBS_SECRET`: Shared secret required for internal scheduled jobs (`X-Internal-Job-Secret`).
+- `NOTIFICATIONS_ENABLED`: Enable email dispatch (`true`/`false`, default `false`).
+- `NOTIFICATIONS_PROVIDER`: Notification provider (`DISABLED`, `CONSOLE`, or `RESEND`).
+- `NOTIFICATIONS_API_KEY`: API key if using Resend email provider.
+- `NEXT_PUBLIC_API_URL`: Backend API base URL for frontend (default: `http://localhost:8080`).
+
+> **Note on Environment Variables:** Spring Boot does not automatically read `.env` files at startup. Set environment variables in your shell (e.g. `$env:SPRING_DATASOURCE_PASSWORD="secret"` in PowerShell) or use Docker Compose.
 
 ### Running Backend Tests
-All 209 tests execute in-memory using H2 with Flyway PostgreSQL compatibility:
+All 215 backend tests execute automated suites (including H2 and embedded PostgreSQL Flyway migration verification):
 ```bash
 cd backend
 ./mvnw clean test
 ```
 
 ### Running the Backend Server
-> **Note on Local Database Provisioning:** Live runtime execution requires a running PostgreSQL instance with configured credentials. PostgreSQL provisioning and credential management are handled separately by the Estate & Backend Engineer.
+
+#### Option A: Zero-Dependency Local Development (H2 In-Memory)
+For instant local UI development without needing a local PostgreSQL service:
 ```bash
 cd backend
-./mvnw spring-boot:run
+./mvnw spring-boot:run "-Dspring-boot.run.profiles=dev"
 ```
+*(Note: quotes around `"-Dspring-boot.run.profiles=dev"` are required in PowerShell).*
+
+#### Option B: PostgreSQL Runtime (Docker Compose or Native PostgreSQL)
+1. **Using Docker Compose:**
+   ```bash
+   docker compose up -d
+   cd backend
+   ./mvnw spring-boot:run
+   ```
+2. **Using Local Native PostgreSQL:**
+   Ensure PostgreSQL is running and credentials match:
+   ```powershell
+   # PowerShell
+   $env:SPRING_DATASOURCE_PASSWORD="your_postgres_password"
+   cd backend
+   ./mvnw spring-boot:run
+   ```
 
 ### Running the Frontend
 ```bash
