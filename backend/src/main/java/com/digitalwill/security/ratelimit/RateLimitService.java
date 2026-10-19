@@ -37,13 +37,19 @@ public class RateLimitService {
             return new RateLimitDecision(true, 0);
         }
 
-        long nowEpochMilli = timeProvider.now().toEpochMilli();
         long windowMillis = windowSeconds * 1000L;
-        long windowStart = nowEpochMilli - windowMillis;
 
         // Synchronize on the internal window for this specific key
         Deque<Long> window = requestWindows.computeIfAbsent(key, k -> new ArrayDeque<>());
         synchronized (window) {
+            long nowEpochMilli = timeProvider.now().toEpochMilli();
+            long windowStart = nowEpochMilli - windowMillis;
+
+            // Handle clock jumps: if clock was moved backwards, evict future-dated entries
+            if (!window.isEmpty() && window.peekLast() > nowEpochMilli) {
+                window.removeIf(ts -> ts > nowEpochMilli);
+            }
+
             // Evict expired timestamps outside the sliding window
             while (!window.isEmpty() && window.peekFirst() < windowStart) {
                 window.pollFirst();
