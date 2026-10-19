@@ -23,6 +23,9 @@ public interface VerificationRequestRepository extends JpaRepository<Verificatio
 
     List<VerificationRequest> findByWillIdAndVerificationCycle(UUID willId, Long verificationCycle);
 
+    Optional<VerificationRequest> findByWillIdAndContactIdAndVerificationCycleAndStatus(
+            UUID willId, UUID contactId, Long verificationCycle, VerificationRequestStatus status);
+
     @Modifying
     @Query("UPDATE VerificationRequest r SET r.status = 'REVOKED' WHERE r.willId = :willId AND r.status = 'ACTIVE'")
     int revokeActiveByWillId(@Param("willId") UUID willId);
