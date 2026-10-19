@@ -40,7 +40,10 @@ class JobConcurrencyTest {
     @org.junit.jupiter.api.AfterEach
     void tearDown() {
         for (UUID id : willIds) {
-            willStateRepository.deleteById(id);
+            willStateRepository.findById(id).ifPresent(w -> {
+                w.setState(WillState.EXECUTED);
+                willStateRepository.save(w);
+            });
         }
     }
 
