@@ -88,6 +88,10 @@ public class AuditLogService {
                                      AuditAction action, AuditStatus status,
                                      AuditResourceType resourceType, String resourceId,
                                      String detailsJson) {
+        Objects.requireNonNull(action, "action must not be null");
+        Objects.requireNonNull(status, "status must not be null");
+        Objects.requireNonNull(resourceType, "resourceType must not be null");
+
         Instant now = timeProvider.now();
         Optional<AuditLogEntry> latestEntryOpt = auditLogRepository.findTopByOrderBySequenceNumberDesc();
 
@@ -174,7 +178,7 @@ public class AuditLogService {
                 actorId + "|" +
                 action.name() + "|" +
                 status.name() + "|" +
-                resourceType.name() + "|" +
+                (resourceType != null ? resourceType.name() : "") + "|" +
                 (resourceId != null ? resourceId : "") + "|" +
                 (detailsJson != null ? detailsJson.trim() : "{}") + "|" +
                 prevHash;

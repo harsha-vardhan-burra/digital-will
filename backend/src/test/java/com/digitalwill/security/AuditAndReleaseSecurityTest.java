@@ -76,6 +76,11 @@ public class AuditAndReleaseSecurityTest {
         jdbcTemplate.update("DELETE FROM audit_logs");
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        jdbcTemplate.update("DELETE FROM audit_logs");
+    }
+
     // =========================================================================
     // WORKSTREAM 6: AUDIT CHAIN INTEGRITY & TAMPER DETECTION (ATK-21, ATK-22)
     // =========================================================================
