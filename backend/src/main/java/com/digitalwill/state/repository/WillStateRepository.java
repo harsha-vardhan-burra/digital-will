@@ -32,11 +32,33 @@ public interface WillStateRepository extends JpaRepository<WillStateEntity, UUID
     @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.ACTIVE AND w.lastVerifiedActivityAt <= :cutoff ORDER BY w.lastVerifiedActivityAt ASC")
     List<WillStateEntity> findEligibleForInactivityWarning(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
 
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.ACTIVE AND w.lastVerifiedActivityAt <= :cutoff ORDER BY w.lastVerifiedActivityAt ASC, w.id ASC")
+    List<WillStateEntity> findEligibleForInactivityWarningFirstBatch(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.ACTIVE AND w.lastVerifiedActivityAt <= :cutoff AND (w.lastVerifiedActivityAt > :lastTime OR (w.lastVerifiedActivityAt = :lastTime AND w.id > :lastId)) ORDER BY w.lastVerifiedActivityAt ASC, w.id ASC")
+    List<WillStateEntity> findEligibleForInactivityWarningNextBatch(@Param("cutoff") Instant cutoff, @Param("lastTime") Instant lastTime, @Param("lastId") UUID lastId, org.springframework.data.domain.Pageable pageable);
+
     @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.INACTIVITY_WARNING AND w.warningSentAt IS NOT NULL AND w.warningSentAt <= :cutoff ORDER BY w.warningSentAt ASC")
     List<WillStateEntity> findEligibleForFinalWarning(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
 
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.INACTIVITY_WARNING AND w.warningSentAt IS NOT NULL AND w.warningSentAt <= :cutoff ORDER BY w.warningSentAt ASC, w.id ASC")
+    List<WillStateEntity> findEligibleForFinalWarningFirstBatch(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.INACTIVITY_WARNING AND w.warningSentAt IS NOT NULL AND w.warningSentAt <= :cutoff AND (w.warningSentAt > :lastTime OR (w.warningSentAt = :lastTime AND w.id > :lastId)) ORDER BY w.warningSentAt ASC, w.id ASC")
+    List<WillStateEntity> findEligibleForFinalWarningNextBatch(@Param("cutoff") Instant cutoff, @Param("lastTime") Instant lastTime, @Param("lastId") UUID lastId, org.springframework.data.domain.Pageable pageable);
+
     @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.FINAL_WARNING AND w.finalWarningSentAt IS NOT NULL AND w.finalWarningSentAt <= :cutoff ORDER BY w.finalWarningSentAt ASC")
     List<WillStateEntity> findEligibleForVerification(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.FINAL_WARNING AND w.finalWarningSentAt IS NOT NULL AND w.finalWarningSentAt <= :cutoff ORDER BY w.finalWarningSentAt ASC, w.id ASC")
+    List<WillStateEntity> findEligibleForVerificationFirstBatch(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.FINAL_WARNING AND w.finalWarningSentAt IS NOT NULL AND w.finalWarningSentAt <= :cutoff AND (w.finalWarningSentAt > :lastTime OR (w.finalWarningSentAt = :lastTime AND w.id > :lastId)) ORDER BY w.finalWarningSentAt ASC, w.id ASC")
+    List<WillStateEntity> findEligibleForVerificationNextBatch(@Param("cutoff") Instant cutoff, @Param("lastTime") Instant lastTime, @Param("lastId") UUID lastId, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.VERIFICATION_PENDING AND NOT EXISTS (" +
+            "SELECT r FROM VerificationRequest r WHERE r.willId = w.id AND r.verificationCycle = w.verificationCycle AND r.status = com.digitalwill.verification.model.VerificationRequestStatus.ACTIVE)")
+    List<WillStateEntity> findVerificationPendingWillsMissingRequests(org.springframework.data.domain.Pageable pageable);
 
     @Query("SELECT w FROM WillStateEntity w WHERE w.state = com.digitalwill.state.model.WillState.RELEASE_PENDING AND w.releaseAfter <= :now AND w.cancelledAt IS NULL ORDER BY w.releaseAfter ASC")
     List<WillStateEntity> findEligibleForExecution(@Param("now") Instant now, org.springframework.data.domain.Pageable pageable);

@@ -49,17 +49,17 @@ class PostgreSqlFlywayMigrationIntegrationTest {
     @DisplayName("Verify Flyway migrations execute successfully against real PostgreSQL")
     void flywayMigrationsExecuteAgainstRealPostgres() {
         int migrationsApplied = flyway.migrate().migrationsExecuted;
-        assertThat(migrationsApplied).isGreaterThanOrEqualTo(7);
+        assertThat(migrationsApplied).isGreaterThanOrEqualTo(8);
 
         MigrationInfo[] applied = flyway.info().applied();
-        assertThat(applied).hasSize(7);
+        assertThat(applied).hasSize(8);
 
         for (MigrationInfo info : applied) {
             assertThat(info.getState().isApplied()).isTrue();
             assertThat(info.getState().isFailed()).isFalse();
         }
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
     }
 
     @Test

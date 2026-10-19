@@ -46,6 +46,59 @@ class EstateControllerTest {
     }
 
     @Test
+    void getMyWill_whenNoWillExists_returns404() throws Exception {
+        String token = getAuthToken("nowill");
+        mockMvc.perform(get("/api/wills/my")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getMyWill_whenWillExists_returns200() throws Exception {
+        String token = getAuthToken("haswill");
+        String body = objectMapper.writeValueAsString(Map.of("title", "Existing Estate"));
+        String response = mockMvc.perform(post("/api/wills")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String willId = (String) objectMapper.readValue(response, Map.class).get("id");
+
+        mockMvc.perform(get("/api/wills/my")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(willId))
+                .andExpect(jsonPath("$.title").value("Existing Estate"));
+    }
+
+    @Test
+    void addAsset_withQuotesAndSpecialCharactersInTitle_succeeds() throws Exception {
+        String token = getAuthToken("specialasset");
+        String willRes = mockMvc.perform(post("/api/wills")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("title", "Special Asset Will"))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String willId = (String) objectMapper.readValue(willRes, Map.class).get("id");
+
+        String assetBody = objectMapper.writeValueAsString(Map.of(
+                "title", "John's \"Primary\" Digital Wallet & Cloud",
+                "category", "DIGITAL_ACCOUNT",
+                "description", "Cloud archive: 2FA & keys",
+                "instructions", "Execute upon succession"
+        ));
+        mockMvc.perform(post("/api/wills/" + willId + "/assets")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(assetBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.title").value("John's \"Primary\" Digital Wallet & Cloud"))
+                .andExpect(jsonPath("$.category").value("DIGITAL_ACCOUNT"));
+    }
+
+    @Test
     void createWill_andQuery_success() throws Exception {
         String token = getAuthToken("create");
         String body = objectMapper.writeValueAsString(Map.of(

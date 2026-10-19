@@ -49,6 +49,21 @@ class InactivityProcessingJobTest {
     @Autowired
     private JobProperties jobProperties;
 
+    @Autowired
+    private com.digitalwill.state.repository.AtomicWillTransitionRepository atomicTransitionRepository;
+
+    @Autowired
+    private com.digitalwill.state.registry.TransitionRegistry transitionRegistry;
+
+    @Autowired
+    private com.digitalwill.verification.repository.WillContactRepository willContactRepository;
+
+    @Autowired
+    private com.digitalwill.audit.service.AuditLogService auditLogService;
+
+    @Autowired
+    private jakarta.persistence.EntityManager entityManager;
+
     private final Instant baseTime = Instant.parse("2026-10-01T12:00:00Z");
 
     @BeforeEach
@@ -133,5 +148,73 @@ class InactivityProcessingJobTest {
         assertThat(second.warnedActiveWills()).isEqualTo(0);
         assertThat(second.finalWarnedWills()).isEqualTo(0);
         assertThat(second.initiatedVerifications()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("Keyset pagination prevents starvation when more poison wills than batchSize fail persistently")
+    void keysetPagination_preventsStarvationOnPersistentFailures() {
+        int originalBatchSize = jobProperties.getBatchSize();
+        try {
+            jobProperties.setBatchSize(2);
+
+            // Create 3 poison wills with activity 100 days ago
+            UUID poison1 = UUID.randomUUID();
+            UUID poison2 = UUID.randomUUID();
+            UUID poison3 = UUID.randomUUID();
+
+            Instant poisonActivity = baseTime.minus(Duration.ofDays(100));
+            willStateRepository.save(new WillStateEntity(poison1, UUID.randomUUID(), "Poison 1", WillState.ACTIVE, poisonActivity, poisonActivity));
+            willStateRepository.save(new WillStateEntity(poison2, UUID.randomUUID(), "Poison 2", WillState.ACTIVE, poisonActivity, poisonActivity));
+            willStateRepository.save(new WillStateEntity(poison3, UUID.randomUUID(), "Poison 3", WillState.ACTIVE, poisonActivity, poisonActivity));
+
+            // Create 2 healthy wills with activity 95 days ago (so they sort AFTER the poison wills)
+            UUID healthy1 = UUID.randomUUID();
+            UUID healthy2 = UUID.randomUUID();
+
+            Instant healthyActivity = baseTime.minus(Duration.ofDays(95));
+            willStateRepository.save(new WillStateEntity(healthy1, UUID.randomUUID(), "Healthy 1", WillState.ACTIVE, healthyActivity, healthyActivity));
+            willStateRepository.save(new WillStateEntity(healthy2, UUID.randomUUID(), "Healthy 2", WillState.ACTIVE, healthyActivity, healthyActivity));
+
+            java.util.Set<UUID> poisonIds = java.util.Set.of(poison1, poison2, poison3);
+
+            com.digitalwill.state.service.WillStateService failingStateService =
+                    new com.digitalwill.state.service.WillStateService(
+                            willStateRepository, atomicTransitionRepository, transitionRegistry, testTimeProvider, entityManager) {
+                        @Override
+                        public boolean triggerInactivityWarning(UUID willId, Duration inactivityThreshold) {
+                            if (poisonIds.contains(willId)) {
+                                throw new RuntimeException("Simulated persistent failure for will " + willId);
+                            }
+                            return super.triggerInactivityWarning(willId, inactivityThreshold);
+                        }
+                    };
+
+            InactivityProcessingJobService jobWithPoisonRows = new InactivityProcessingJobService(
+                    willStateRepository, failingStateService, willContactRepository,
+                    verificationService, verificationRequestRepository, auditLogService,
+                    testTimeProvider, jobProperties
+            );
+
+            InactivityProcessingJobService.InactivityJobReport report = jobWithPoisonRows.processInactivityJob();
+
+            // Clear first-level persistence cache so assertions reload updated state directly from database
+            entityManager.clear();
+
+            // Assert that healthy wills behind the poison wills were successfully transitioned
+            assertThat(willStateRepository.findById(healthy1).orElseThrow().getState()).isEqualTo(WillState.INACTIVITY_WARNING);
+            assertThat(willStateRepository.findById(healthy2).orElseThrow().getState()).isEqualTo(WillState.INACTIVITY_WARNING);
+
+            // Assert that poison wills remained ACTIVE
+            assertThat(willStateRepository.findById(poison1).orElseThrow().getState()).isEqualTo(WillState.ACTIVE);
+            assertThat(willStateRepository.findById(poison2).orElseThrow().getState()).isEqualTo(WillState.ACTIVE);
+            assertThat(willStateRepository.findById(poison3).orElseThrow().getState()).isEqualTo(WillState.ACTIVE);
+
+            // Assert that failures are reported in errors
+            assertThat(report.errors()).hasSize(3);
+            assertThat(report.errors()).allMatch(err -> err.contains("Simulated persistent failure"));
+            assertThat(report.warnedActiveWills()).isGreaterThanOrEqualTo(2);
+        } finally {
+            jobProperties.setBatchSize(originalBatchSize);
+        }
     }
 }

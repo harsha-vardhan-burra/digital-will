@@ -12,5 +12,6 @@ import java.util.UUID;
 public interface BeneficiaryRepository extends JpaRepository<Beneficiary, UUID> {
     List<Beneficiary> findByWillId(UUID willId);
     Optional<Beneficiary> findByIdAndWillId(UUID id, UUID willId);
+    boolean existsByWillIdAndEmailIgnoreCase(UUID willId, String email);
     long countByWillId(UUID willId);
 }

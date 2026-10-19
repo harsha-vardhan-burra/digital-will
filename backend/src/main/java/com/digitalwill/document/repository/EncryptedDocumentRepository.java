@@ -13,6 +13,8 @@ public interface EncryptedDocumentRepository extends JpaRepository<EncryptedDocu
 
     List<EncryptedDocument> findByWillId(UUID willId);
 
+    List<EncryptedDocument> findByWillIdAndStatus(UUID willId, com.digitalwill.document.model.DocumentStatus status);
+
     Optional<EncryptedDocument> findByIdAndWillId(UUID id, UUID willId);
 
     long countByWillId(UUID willId);

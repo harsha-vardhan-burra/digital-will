@@ -3,14 +3,24 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api, getAuthToken } from '@/lib/api';
-import { DocumentResponse, UIState, WillResponse } from '@/lib/types';
+import { DocumentCategory, DocumentResponse, UIState, WillResponse } from '@/lib/types';
 import { formatBytes, formatDate, mapErrorToUIState } from '@/lib/utils';
-import { AlertCircle, ArrowRight, CheckCircle2, Download, FileCheck2, FileText, Files, Fingerprint, LockKeyhole, RefreshCw, Search, ShieldCheck, UploadCloud } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, Download, FileCheck2, FileText, Files, Fingerprint, LockKeyhole, RefreshCw, Search, ShieldAlert, ShieldCheck, UploadCloud } from 'lucide-react';
+
+const DOCUMENT_CATEGORIES: { label: string; value: DocumentCategory }[] = [
+  { label: 'Will Attachment / Codicil', value: 'WILL_ATTACHMENT' },
+  { label: 'Identity Record / Passport / ID', value: 'IDENTITY_RECORD' },
+  { label: 'Property Deed / Title / Escrow', value: 'PROPERTY_DEED' },
+  { label: 'Financial Record / Statement', value: 'FINANCIAL_RECORD' },
+  { label: 'Medical Directive / Record', value: 'MEDICAL_RECORD' },
+  { label: 'General Legal Document', value: 'GENERAL' },
+];
 
 export default function DocumentsPage() {
   const [will, setWill] = useState<WillResponse | null>(null);
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<DocumentCategory>('WILL_ATTACHMENT');
   const [uiState, setUiState] = useState<UIState>('idle');
   const [uploading, setUploading] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -63,18 +73,32 @@ export default function DocumentsPage() {
     return documents.filter((document) => document.fileName.toLowerCase().includes(term) || document.contentType.toLowerCase().includes(term));
   }, [documents, search]);
 
+  const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+
   const handleUpload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!will || !selectedFile || uploading) return;
+    if (!will) {
+      setErrorMessage('No active estate found. Please create or open your Digital Will before uploading documents.');
+      return;
+    }
+    if (!selectedFile) {
+      setErrorMessage('Please select a file to upload.');
+      return;
+    }
+    if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+      setErrorMessage(`File exceeds the maximum permitted size limit of ${formatBytes(MAX_FILE_SIZE_BYTES)}.`);
+      return;
+    }
+    if (uploading) return;
     setUploading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      await api.uploadDocument(will.id, selectedFile);
+      await api.uploadDocument(will.id, selectedFile, selectedCategory);
       setSelectedFile(null);
       const input = document.getElementById('document-file') as HTMLInputElement | null;
       if (input) input.value = '';
-      setSuccessMessage('Document uploaded. The server has processed it through the configured encrypted-storage workflow.');
+      setSuccessMessage('Document uploaded, validated, and safely encrypted in vault.');
       await loadDocuments(will.id);
     } catch (error: unknown) {
       const { message } = mapErrorToUIState(error);
@@ -104,16 +128,16 @@ export default function DocumentsPage() {
     return <div className="mx-auto max-w-xl py-12"><div className="surface p-8 text-center sm:p-10"><span className="icon-tile mx-auto"><LockKeyhole className="h-5 w-5" /></span><h1 className="mt-5 text-2xl font-extrabold text-[#18392d]">Sign in to manage documents</h1><p className="mt-2 text-sm leading-6 text-slate-500">Document access requires an authenticated owner session.</p><Link href="/auth" className="primary-button mt-6">Sign in or create account <ArrowRight className="h-4 w-4" /></Link></div></div>;
   }
 
-  if (uiState === 'not_found' || (!will && uiState === 'success')) {
-    return <div className="mx-auto max-w-xl py-12"><div className="surface p-8 text-center sm:p-10"><span className="icon-tile mx-auto"><Files className="h-5 w-5" /></span><h1 className="mt-5 text-2xl font-extrabold text-[#18392d]">Create your estate first</h1><p className="mt-2 text-sm leading-6 text-slate-500">Documents are attached to your Digital Will. Create an estate workspace, then return here to upload or retrieve files.</p><Link href="/estate" className="primary-button mt-6">Open estate workspace <ArrowRight className="h-4 w-4" /></Link></div></div>;
-  }
-
   if (uiState === 'loading' && !will) {
     return <div className="mx-auto max-w-xl py-20 text-center"><RefreshCw className="mx-auto h-6 w-6 animate-spin text-emerald-700" /><p className="mt-4 text-sm text-slate-500">Loading your secure document workspace…</p></div>;
   }
 
   if (!will && (uiState === 'server_error' || uiState === 'network_error')) {
     return <div className="mx-auto max-w-xl py-12"><div className="surface p-8 text-center sm:p-10"><span className="icon-tile mx-auto"><AlertCircle className="h-5 w-5" /></span><h1 className="mt-5 text-2xl font-extrabold text-[#18392d]">Could not reach your estate</h1><p className="mt-2 text-sm leading-6 text-slate-500">{errorMessage || 'The document workspace could not load from the backend.'}</p><button type="button" onClick={() => void loadInitial()} className="primary-button mt-6"><RefreshCw className="h-4 w-4" /> Retry connection</button></div></div>;
+  }
+
+  if (uiState === 'not_found' || !will) {
+    return <div className="mx-auto max-w-xl py-12"><div className="surface p-8 text-center sm:p-10"><span className="icon-tile mx-auto"><Files className="h-5 w-5" /></span><h1 className="mt-5 text-2xl font-extrabold text-[#18392d]">Create your estate first</h1><p className="mt-2 text-sm leading-6 text-slate-500">Documents are attached to your Digital Will. Create an estate workspace, then return here to upload or retrieve files.</p><Link href="/estate" className="primary-button mt-6">Open estate workspace <ArrowRight className="h-4 w-4" /></Link></div></div>;
   }
 
   return (
@@ -130,16 +154,40 @@ export default function DocumentsPage() {
         <section className="surface p-5 sm:p-7">
           <div className="flex items-start gap-3"><span className="icon-tile"><UploadCloud className="h-5 w-5" /></span><div><h2 className="text-lg font-extrabold text-slate-800">Add a document</h2><p className="mt-1 text-sm leading-6 text-slate-500">Choose the file you want associated with this estate.</p></div></div>
           <form onSubmit={handleUpload} className="mt-6 space-y-4">
-            <label htmlFor="document-file" className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#cfe1d5] bg-[#f8fbf9] px-5 py-7 text-center transition hover:border-emerald-400 hover:bg-emerald-50/50">
+            <div className="space-y-1">
+              <label htmlFor="document-category" className="text-xs font-bold text-slate-700">Document Category</label>
+              <select
+                id="document-category"
+                value={selectedCategory}
+                onChange={(event) => setSelectedCategory(event.target.value as DocumentCategory)}
+                className="field-control"
+              >
+                {DOCUMENT_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <label htmlFor="document-file" className="flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#cfe1d5] bg-[#f8fbf9] px-5 py-6 text-center transition hover:border-emerald-400 hover:bg-emerald-50/50">
               <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-emerald-800 shadow-sm"><UploadCloud className="h-5 w-5" /></span>
-              <span className="mt-4 max-w-full break-all text-sm font-extrabold text-slate-700">{selectedFile ? selectedFile.name : 'Choose a file to upload'}</span>
-              <span className="mt-1 text-xs text-slate-500">{selectedFile ? `${formatBytes(selectedFile.size)} · ${selectedFile.type || 'Unknown file type'}` : 'Select a file from your device'}</span>
+              <span className="mt-3 max-w-full break-all text-sm font-extrabold text-slate-700">{selectedFile ? selectedFile.name : 'Choose a file to upload'}</span>
+              <span className="mt-1 text-xs text-slate-500">{selectedFile ? `${formatBytes(selectedFile.size)} · ${selectedFile.type || 'Unknown file type'}` : 'Select a PDF, Image, or Word doc'}</span>
               <span className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700">Browse files</span>
               <input id="document-file" type="file" className="sr-only" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
             </label>
-            <button type="submit" disabled={!selectedFile || uploading || !will} className="primary-button w-full disabled:opacity-50">{uploading ? <><RefreshCw className="h-4 w-4 animate-spin" /> Uploading…</> : <><LockKeyhole className="h-4 w-4" /> Upload document <ArrowRight className="h-4 w-4" /></>}</button>
+
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-xs text-blue-900 space-y-1">
+              <p className="font-bold flex items-center gap-1.5"><ShieldAlert className="h-4 w-4 text-blue-700" /> Upload Validation Pipeline</p>
+              <ul className="list-disc pl-4 space-y-0.5 text-blue-800 text-[11px]">
+                <li>Allowed: PDF (.pdf), JPEG/PNG (.jpg, .png), DOCX (.docx) up to 20 MB.</li>
+                <li>Executables, scripts, HTML/SVG, macros, and password-protected files are blocked.</li>
+                <li>Every upload undergoes server-side MIME detection, safe parsing, and malware scanning.</li>
+              </ul>
+            </div>
+
+            <button type="submit" disabled={!selectedFile || uploading || !will} className="primary-button w-full disabled:opacity-50">{uploading ? <><RefreshCw className="h-4 w-4 animate-spin" /> Validating, scanning, and encrypting…</> : <><LockKeyhole className="h-4 w-4" /> Upload document <ArrowRight className="h-4 w-4" /></>}</button>
           </form>
-          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4"><p className="flex items-center gap-2 text-xs font-extrabold text-slate-700"><ShieldCheck className="h-4 w-4 text-emerald-700" /> Server-controlled protection</p><p className="mt-1 text-xs leading-5 text-slate-500">Files are uploaded over the authenticated API. The backend owns encryption, ownership validation and download authorization.</p></div>
+          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4"><p className="flex items-center gap-2 text-xs font-extrabold text-slate-700"><ShieldCheck className="h-4 w-4 text-emerald-700" /> Server-controlled protection</p><p className="mt-1 text-xs leading-5 text-slate-500">Files are validated, scanned for malware, and envelope-encrypted before acceptance. Unaccepted or quarantined files cannot be downloaded or disclosed.</p></div>
         </section>
 
         <section className="surface min-w-0 p-5 sm:p-7">
@@ -152,7 +200,58 @@ export default function DocumentsPage() {
           <div className="mt-4 space-y-2">
             {uiState === 'loading' && <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><RefreshCw className="h-4 w-4 animate-spin" /> Loading documents…</div>}
             {uiState !== 'loading' && visibleDocuments.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-10 text-center"><span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-slate-50 text-slate-500"><FileText className="h-5 w-5" /></span><p className="mt-3 text-sm font-bold text-slate-700">{documents.length === 0 ? 'No documents yet' : 'No matching files'}</p><p className="mt-1 text-xs leading-5 text-slate-500">{documents.length === 0 ? 'Upload your first document using the panel on the left.' : 'Try a different search phrase.'}</p></div>}
-            {visibleDocuments.map((item) => <article key={item.id} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-4 transition hover:border-emerald-100 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-800"><FileText className="h-4 w-4" /></span><div className="min-w-0"><p className="break-words text-sm font-extrabold text-slate-800">{item.fileName}</p><p className="mt-1 text-xs text-slate-500">{formatBytes(item.fileSize)} <span className="px-1">·</span> {item.contentType}</p><p className="mt-1 truncate font-mono text-[10px] text-slate-400" title={item.checksumSha256}>SHA-256 · {item.checksumSha256}</p><p className="mt-1 text-[11px] text-slate-400">Added {formatDate(item.createdAt)}</p></div></div><button type="button" onClick={() => handleDownload(item)} disabled={downloadingId !== null} className="secondary-button shrink-0 !min-h-9 !text-xs"><Download className="h-3.5 w-3.5" /> {downloadingId === item.id ? 'Preparing…' : 'Download'}</button></article>)}
+            {visibleDocuments.map((item) => (
+              <article key={item.id} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-4 transition hover:border-emerald-100 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-800"><FileText className="h-4 w-4" /></span>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="break-words text-sm font-extrabold text-slate-800">{item.fileName}</p>
+                      {item.status === 'ACCEPTED' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <CheckCircle2 className="w-3 h-3" /> ACCEPTED
+                        </span>
+                      ) : item.status === 'PENDING' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> PENDING
+                        </span>
+                      ) : item.status === 'REJECTED' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-300">
+                          <AlertCircle className="w-3 h-3" /> REJECTED
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-300">
+                          <AlertTriangle className="w-3 h-3" /> {item.status}
+                        </span>
+                      )}
+                      {item.category && (
+                        <span className="inline-block px-1.5 py-0.5 text-[10px] font-mono text-slate-600 bg-slate-100 rounded border border-slate-200">
+                          {item.category}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">{formatBytes(item.fileSize)} <span className="px-1">·</span> {item.detectedContentType || item.contentType}</p>
+                    <p className="truncate font-mono text-[10px] text-slate-400" title={item.checksumSha256}>SHA-256 · {item.checksumSha256}</p>
+                    {item.statusMessage && item.status !== 'ACCEPTED' && (
+                      <p className="text-xs text-red-600 font-medium bg-red-50 p-1.5 rounded border border-red-100">
+                        {item.statusMessage}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-slate-400">Added {formatDate(item.createdAt)}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDownload(item)}
+                  disabled={downloadingId !== null || item.status !== 'ACCEPTED'}
+                  className={`secondary-button shrink-0 !min-h-9 !text-xs ${item.status !== 'ACCEPTED' ? '!opacity-40 !cursor-not-allowed' : ''}`}
+                  title={item.status !== 'ACCEPTED' ? `Document status is ${item.status}. Only ACCEPTED files can be downloaded.` : 'Download file'}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {downloadingId === item.id ? 'Preparing…' : item.status === 'ACCEPTED' ? 'Download' : item.status}
+                </button>
+              </article>
+            ))}
           </div>
         </section>
       </div>

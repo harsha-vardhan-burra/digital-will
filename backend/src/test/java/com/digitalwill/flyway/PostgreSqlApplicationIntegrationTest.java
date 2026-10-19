@@ -60,9 +60,9 @@ class PostgreSqlApplicationIntegrationTest {
         assertThat(dataSource).isNotNull();
         assertThat(flyway).isNotNull();
 
-        // Verify Flyway applied all 7 migrations
-        assertThat(flyway.info().applied()).hasSize(7);
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
+        // Verify Flyway applied all 8 migrations
+        assertThat(flyway.info().applied()).hasSize(8);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
 
         // Verify connection is PostgreSQL
         try (Connection conn = dataSource.getConnection();

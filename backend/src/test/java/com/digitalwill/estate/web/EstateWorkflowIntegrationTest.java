@@ -36,6 +36,17 @@ class EstateWorkflowIntegrationTest {
 
     private final Instant baseTime = Instant.parse("2026-10-01T10:00:00Z");
 
+    private byte[] createMinimalPdf() {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument();
+             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+            doc.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            doc.save(baos);
+            return baos.toByteArray();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @BeforeEach
     void setUp() {
         timeProvider.setNow(baseTime);
@@ -155,7 +166,7 @@ class EstateWorkflowIntegrationTest {
         // 8. Attach Envelope-Encrypted Supporting Document
         MockMultipartFile deedFile = new MockMultipartFile(
                 "file", "property_deed.pdf", "application/pdf",
-                "Certified Title Deed Content".getBytes(StandardCharsets.UTF_8)
+                createMinimalPdf()
         );
         mockMvc.perform(multipart("/api/documents/upload")
                         .file(deedFile)

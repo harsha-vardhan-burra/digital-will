@@ -137,7 +137,13 @@ public class ReleaseExecutionService {
 
         // 2. Claim execution if in RELEASE_PENDING
         if (will.getState() == WillState.RELEASE_PENDING) {
-            boolean claimed = willStateService.claimExecution(willId);
+            boolean claimed;
+            try {
+                claimed = willStateService.claimExecution(willId);
+            } catch (com.digitalwill.state.exception.IllegalStateTransitionException e) {
+                // Raced with another concurrent worker that already transitioned the will
+                return new ExecutionResult(false, ExecutionStatus.NOT_STARTED, 0, 0, 0, "Execution claim raced: " + e.getMessage());
+            }
             if (!claimed) {
                 // Raced with another worker or not yet eligible
                 return new ExecutionResult(false, ExecutionStatus.NOT_STARTED, 0, 0, 0, "Execution claim rejected or raced");

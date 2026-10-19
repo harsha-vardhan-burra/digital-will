@@ -82,6 +82,15 @@ export interface Asset {
   instructions: string | null;
   createdAt: string;
   updatedAt: string;
+  institutionProvider?: string | null;
+  accountType?: string | null;
+  currency?: string | null;
+  assetValue?: number | null;
+  valuationDate?: string | null;
+  ownershipPercentage?: number | null;
+  assetYear?: number | null;
+  assetUrl?: string | null;
+  identifierMasked?: string | null;
 }
 
 export interface Beneficiary {
@@ -161,6 +170,21 @@ export interface AuditLogDto {
   detailsJson: string | null;
 }
 
+export type DocumentValidationStatus =
+  | 'PENDING'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'NEEDS_REVIEW'
+  | 'FAILED_RETRYABLE';
+
+export type DocumentCategory =
+  | 'WILL_ATTACHMENT'
+  | 'IDENTITY_RECORD'
+  | 'PROPERTY_DEED'
+  | 'FINANCIAL_RECORD'
+  | 'MEDICAL_RECORD'
+  | 'GENERAL';
+
 export interface DocumentResponse {
   id: string;
   willId: string;
@@ -169,6 +193,11 @@ export interface DocumentResponse {
   fileSize: number;
   checksumSha256: string;
   createdAt: string;
+  status: DocumentValidationStatus;
+  statusCode?: string | null;
+  statusMessage?: string | null;
+  detectedContentType?: string | null;
+  category?: DocumentCategory | null;
 }
 
 // Mirrors audit.service.AuditVerificationResult exactly.

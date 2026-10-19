@@ -38,6 +38,33 @@ public class Asset {
     @Column(name = "instructions", columnDefinition = "TEXT")
     private String instructions;
 
+    @Column(name = "institution_provider")
+    private String institutionProvider;
+
+    @Column(name = "account_type", length = 100)
+    private String accountType;
+
+    @Column(name = "currency", length = 3)
+    private String currency;
+
+    @Column(name = "asset_value", precision = 19, scale = 4)
+    private java.math.BigDecimal assetValue;
+
+    @Column(name = "valuation_date")
+    private java.time.LocalDate valuationDate;
+
+    @Column(name = "ownership_percentage", precision = 5, scale = 2)
+    private java.math.BigDecimal ownershipPercentage;
+
+    @Column(name = "asset_year")
+    private Integer assetYear;
+
+    @Column(name = "asset_url", length = 2000)
+    private String assetUrl;
+
+    @Column(name = "identifier_masked")
+    private String identifierMasked;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -130,5 +157,77 @@ public class Asset {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getInstitutionProvider() {
+        return institutionProvider;
+    }
+
+    public void setInstitutionProvider(String institutionProvider) {
+        this.institutionProvider = institutionProvider;
+    }
+
+    public String getAccountType() {
+        return accountType;
+    }
+
+    public void setAccountType(String accountType) {
+        this.accountType = accountType;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public java.math.BigDecimal getAssetValue() {
+        return assetValue;
+    }
+
+    public void setAssetValue(java.math.BigDecimal assetValue) {
+        this.assetValue = assetValue;
+    }
+
+    public java.time.LocalDate getValuationDate() {
+        return valuationDate;
+    }
+
+    public void setValuationDate(java.time.LocalDate valuationDate) {
+        this.valuationDate = valuationDate;
+    }
+
+    public java.math.BigDecimal getOwnershipPercentage() {
+        return ownershipPercentage;
+    }
+
+    public void setOwnershipPercentage(java.math.BigDecimal ownershipPercentage) {
+        this.ownershipPercentage = ownershipPercentage;
+    }
+
+    public Integer getAssetYear() {
+        return assetYear;
+    }
+
+    public void setAssetYear(Integer assetYear) {
+        this.assetYear = assetYear;
+    }
+
+    public String getAssetUrl() {
+        return assetUrl;
+    }
+
+    public void setAssetUrl(String assetUrl) {
+        this.assetUrl = assetUrl;
+    }
+
+    public String getIdentifierMasked() {
+        return identifierMasked;
+    }
+
+    public void setIdentifierMasked(String identifierMasked) {
+        this.identifierMasked = identifierMasked;
     }
 }

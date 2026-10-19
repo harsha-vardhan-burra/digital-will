@@ -61,6 +61,10 @@ public class DisclosureController {
             throw new SecurityException("Unauthorized: document " + documentId + " is outside the disclosure scope for beneficiary " + disclosure.beneficiaryId());
         }
 
+        if (doc.getStatus() != com.digitalwill.document.model.DocumentStatus.ACCEPTED) {
+            throw new SecurityException("Document is not available for disclosure (status: " + doc.getStatus() + ")");
+        }
+
         byte[] decrypted = documentService.downloadDocument(
                 disclosure.willId(),
                 documentId,

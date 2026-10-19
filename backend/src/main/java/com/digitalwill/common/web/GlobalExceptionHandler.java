@@ -1,5 +1,19 @@
 package com.digitalwill.common.web;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+
 import com.digitalwill.audit.exception.AuditPersistenceException;
 import com.digitalwill.common.TimeProvider;
 import com.digitalwill.crypto.exception.CryptoException;
@@ -17,22 +31,8 @@ import com.digitalwill.verification.exception.InvalidVerificationTokenException;
 import com.digitalwill.verification.exception.VerificationRequestRevokedException;
 import com.digitalwill.verification.exception.VerificationTokenAlreadyUsedException;
 import com.digitalwill.verification.exception.VerificationTokenExpiredException;
-import jakarta.servlet.http.HttpServletRequest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
-import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -274,6 +274,64 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(org.springframework.web.multipart.MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        log.warn("Uploaded file exceeds maximum allowed size at [{}]: {}", request.getRequestURI(), ex.getMessage());
+        ErrorResponse body = new ErrorResponse(
+                timeProvider.now(),
+                HttpStatus.PAYLOAD_TOO_LARGE.value(),
+                "FILE_TOO_LARGE",
+                "Uploaded file exceeds maximum permitted size",
+                request.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+    }
+
+    @ExceptionHandler(com.digitalwill.common.exception.ValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidationException(com.digitalwill.common.exception.ValidationException ex, HttpServletRequest request) {
+        log.warn("Validation failure [{}] at [{}]: {}", ex.getCode(), request.getRequestURI(), ex.getMessage());
+        ErrorResponse body = new ErrorResponse(
+                timeProvider.now(),
+                ex.getStatus().value(),
+                ex.getCode(),
+                ex.getMessage(),
+                request.getRequestURI()
+        );
+        return ResponseEntity.status(ex.getStatus()).body(body);
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(org.springframework.http.converter.HttpMessageNotReadableException ex, HttpServletRequest request) {
+        log.warn("Unreadable HTTP message at [{}]: {}", request.getRequestURI(), ex.getMessage());
+        String code = "INVALID_ARGUMENT";
+        String message = "Malformed JSON request payload";
+
+        Throwable cause = ex.getCause();
+        if (cause != null) {
+            String className = cause.getClass().getSimpleName();
+            String fullMessage = cause.getMessage() != null ? cause.getMessage() : "";
+            if (fullMessage.contains("AssetCategory")) {
+                code = "INVALID_CATEGORY";
+                message = "Invalid asset category specified. Supported categories: BANK_ACCOUNT, REAL_ESTATE, INVESTMENT, CRYPTO, DIGITAL_ACCOUNT, VEHICLE, PERSONAL_PROPERTY, OTHER";
+            } else if (className.contains("InvalidFormatException") || fullMessage.contains("Cannot deserialize value of type")) {
+                code = "INVALID_ARGUMENT";
+                message = "Invalid field value format in request payload";
+            } else if (className.contains("UnrecognizedPropertyException") || fullMessage.contains("Unrecognized field") || fullMessage.contains("UnrecognizedProperty")) {
+                code = "INVALID_ARGUMENT";
+                message = "Unrecognized field in request payload";
+            }
+        }
+
+        ErrorResponse body = new ErrorResponse(
+                timeProvider.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                code,
+                message,
+                request.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     // --- Client / Validation / Auth Exceptions ---
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -313,32 +371,6 @@ public class GlobalExceptionHandler {
                 request.getRequestURI()
         );
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
-    }
-
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex, HttpServletRequest request) {
-        log.warn("Unreadable request body at [{}]: {}", request.getRequestURI(), ex.getMessage());
-        ErrorResponse body = new ErrorResponse(
-                timeProvider.now(),
-                HttpStatus.BAD_REQUEST.value(),
-                "INVALID_REQUEST_BODY",
-                "Request body is malformed or contains an invalid value (for example an unknown category)",
-                request.getRequestURI()
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
-    }
-
-    @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<ErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest request) {
-        log.warn("Upload too large at [{}]: {}", request.getRequestURI(), ex.getMessage());
-        ErrorResponse body = new ErrorResponse(
-                timeProvider.now(),
-                HttpStatus.PAYLOAD_TOO_LARGE.value(),
-                "UPLOAD_TOO_LARGE",
-                "The uploaded file exceeds the maximum allowed size",
-                request.getRequestURI()
-        );
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
     }
 
     @ExceptionHandler(MissingServletRequestPartException.class)
