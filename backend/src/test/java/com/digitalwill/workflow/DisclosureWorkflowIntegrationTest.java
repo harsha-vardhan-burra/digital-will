@@ -85,6 +85,9 @@ class DisclosureWorkflowIntegrationTest {
     @Autowired
     private TestTimeProvider timeProvider;
 
+    @Autowired
+    private com.digitalwill.security.ratelimit.RateLimitService rateLimitService;
+
     private final Instant baseTime = Instant.parse("2026-06-01T10:00:00Z");
     private UUID ownerId;
     private UUID willId;
@@ -109,6 +112,7 @@ class DisclosureWorkflowIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        rateLimitService.reset();
         timeProvider.setNow(baseTime);
 
         ownerId = UUID.randomUUID();
